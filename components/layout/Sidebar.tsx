@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "@/components/layout/ThemeToggle";
@@ -43,10 +44,14 @@ export default function Sidebar({
   return (
     <aside className={`sidebar${mobileOpen ? " mobile-open" : ""}`}>
       <div className="brand">
-        <div className="brand-title">KIN</div>
-        <div className="brand-subtitle">
-          Executive operating system for Kind Tech.
-        </div>
+        <Image
+          src="/kin-logo.png"
+          alt="KIN"
+          width={180}
+          height={63}
+          priority
+          className={`brand-logo brand-logo-${theme}`}
+        />
       </div>
 
       <nav className="nav">
@@ -84,7 +89,13 @@ export default function Sidebar({
 
         <div className="sidebar-meta">
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-          <div className="powered-by">Powered by Kind Tech</div>
+          <Image
+            src="/footer-powered.png"
+            alt="Powered by Kind Tech"
+            width={150}
+            height={15}
+            className={`powered-watermark powered-watermark-${theme}`}
+          />
         </div>
       </div>
     </aside>
