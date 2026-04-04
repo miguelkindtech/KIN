@@ -81,7 +81,7 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
   );
 
   if (!loaded) {
-    return <div className="loading">Loading B2A...</div>;
+    return <div className="loading">Loading Applied...</div>;
   }
 
   // ---------------------------------------------------------------------------
@@ -298,7 +298,7 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
             router.push("/b2a");
           }}
         >
-          ← back to b2a
+          ← back to applied
         </button>
 
         <div className="detail-page">
@@ -587,16 +587,16 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
           {item.proposed && (
             <div className="proposed-section">
               <div className="detail-label" style={{ marginBottom: 8 }}>
-                this b2a is still a proposed idea.
+                this applied item is still a proposed idea.
               </div>
               <p className="muted" style={{ marginBottom: 12, fontSize: "0.875rem" }}>
-                confirm it to move it into the active b2a pipeline as a lead.
+                confirm it to move it into the active applied pipeline as a lead.
               </p>
               <button
                 className="action-btn"
                 onClick={() => updateItem(item.id, { proposed: false, status: "lead" })}
               >
-                confirm b2a
+                confirm applied
               </button>
             </div>
           )}
@@ -607,7 +607,7 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
               className="danger-btn small-btn"
               onClick={() => setConfirmDeleteId(item.id)}
             >
-              delete b2a item
+              delete applied item
             </button>
           </div>
         </div>
@@ -646,12 +646,12 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
     <div className="page">
       <div className="page-actions">
         <button className="action-btn" onClick={() => createB2A(true)}>
-          + propose b2a
+          + propose applied
         </button>
       </div>
 
       {confirmed.length === 0 && (
-        <div className="empty-state">no b2a items in the pipeline yet.</div>
+        <div className="empty-state">no applied items in the pipeline yet.</div>
       )}
 
       {Object.entries(grouped).map(([status, items]) => (

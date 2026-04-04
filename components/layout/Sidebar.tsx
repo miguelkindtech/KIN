@@ -6,14 +6,29 @@ import { usePathname } from "next/navigation";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import type { Profile } from "@/lib/types";
 
-const NAV = [
-  { href: "/overview", label: "Overview" },
-  { href: "/calendar", label: "Calendar" },
-  { href: "/verticals", label: "Verticals" },
-  { href: "/b2a", label: "B2A" },
-  { href: "/notes", label: "Notes" },
-  { href: "/team", label: "Team" },
-  { href: "/costs", label: "Costs" },
+const NAV_SECTIONS = [
+  {
+    label: "Workspace",
+    items: [
+      { href: "/overview", label: "Overview" },
+      { href: "/calendar", label: "Calendar" },
+    ],
+  },
+  {
+    label: "Business",
+    items: [
+      { href: "/notes", label: "Notes" },
+      { href: "/verticals", label: "Verticals" },
+      { href: "/b2a", label: "Applied" },
+    ],
+  },
+  {
+    label: "Company",
+    items: [
+      { href: "/team", label: "Team" },
+      { href: "/costs", label: "Costs" },
+    ],
+  },
 ];
 
 interface SidebarProps {
@@ -45,32 +60,35 @@ export default function Sidebar({
     <aside className={`sidebar${mobileOpen ? " mobile-open" : ""}`}>
       <div className="brand">
         <Image
-          src="/kin-logo.png"
-          alt="KIN"
+          src="/kind-logo.png"
+          alt="kind."
           width={180}
           height={63}
           priority
           className={`brand-logo brand-logo-${theme}`}
         />
+        <div className="brand-tagline">where the company thinks.</div>
       </div>
 
       <nav className="nav">
-        <div className="nav-section">
-          <div className="nav-section-label">Workspace</div>
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`nav-item${
-                pathname === item.href ? " active" : ""
-              }`}
-              onClick={onNavigate}
-            >
-              <span className="nav-icon" />
-              {item.label}
-            </Link>
-          ))}
-        </div>
+        {NAV_SECTIONS.map((section) => (
+          <div className="nav-section" key={section.label}>
+            <div className="nav-section-label">{section.label}</div>
+            {section.items.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`nav-item${
+                  pathname === item.href ? " active" : ""
+                }`}
+                onClick={onNavigate}
+              >
+                <span className="nav-icon" />
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        ))}
       </nav>
 
       <div className="sidebar-footer">

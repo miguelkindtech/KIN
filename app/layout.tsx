@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "KIN",
-  description: "Executive operating system for Kind Tech",
+  title: "kind.",
+  description: "where the company thinks.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

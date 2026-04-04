@@ -24,7 +24,7 @@ export default function SetupPage() {
           <p className="muted">
             Create the board users in Supabase Auth first, then update the email
             placeholders in <code>supabase/seed.sql</code> and run it to insert
-            the profile rows plus the initial KIN data.
+            the profile rows plus the initial kind. data.
           </p>
         </div>
 

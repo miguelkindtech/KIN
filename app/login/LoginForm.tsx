@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { signIn } from "./actions";
 
 type LoginFormProps = {
@@ -9,11 +10,15 @@ export default function LoginForm({ error }: LoginFormProps) {
     <div className="login-shell">
       <div className="login-card">
         <div className="login-brand">
-          <div className="login-wordmark">
-            <span style={{ fontWeight: 600 }}>KIN</span>
-            <span className="login-dot" />
-          </div>
-          <div className="login-subtitle">Internal operating system</div>
+          <Image
+            src="/kind-logo.png"
+            alt="kind."
+            width={180}
+            height={63}
+            priority
+            className="login-logo"
+          />
+          <div className="login-subtitle">where the company thinks.</div>
         </div>
 
         <form className="login-form" action={signIn}>

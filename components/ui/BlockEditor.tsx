@@ -624,7 +624,7 @@ function BlockRow({
             <input
               type="text"
               className="inline-btn"
-              placeholder="Entity ID (event, vertical, b2a, member)…"
+              placeholder="Entity ID (event, vertical, applied, member)…"
               value={block.entity ?? ""}
               onChange={(e) => onUpdate(block.id, { entity: e.target.value })}
               style={{ flex: 1 }}

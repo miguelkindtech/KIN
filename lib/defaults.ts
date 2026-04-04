@@ -107,14 +107,14 @@ export const DEFAULT_COSTS: Cost[] = [
 export const DEFAULT_NOTES: Note[] = [
   {
     id: "n1",
-    title: "What is KIN",
+    title: "What is kind.",
     category: "strategic",
     description: "Core identity and purpose of the internal OS.",
     color: "#EDE8FF",
     linkedTo: null,
     blocks: [
       { id: "b1", type: "heading2", text: "Purpose" },
-      { id: "b2", type: "text", text: "KIN is the internal operating system of Kind Tech." },
+      { id: "b2", type: "text", text: "kind. is the internal operating system of Kind Tech." },
       { id: "b3", type: "text", text: "It connects time, knowledge, business and structure in one executive system." },
     ],
     createdAt: "2026-03-30T10:00:00Z",
@@ -136,7 +136,7 @@ export const DEFAULT_NOTES: Note[] = [
 export const DEFAULT_OVERVIEW = {
   priorities: [
     "Close Compy pilot preparation",
-    "Push first B2A opportunity to proposal",
+    "Push first applied opportunity to proposal",
     "Review operating costs for Q2",
   ],
 };

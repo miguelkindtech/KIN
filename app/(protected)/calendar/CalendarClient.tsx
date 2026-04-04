@@ -847,7 +847,7 @@ export default function CalendarClient() {
                 </select>
               </div>
               <div>
-                <div className="detail-label">linked b2a</div>
+                <div className="detail-label">linked applied</div>
                 <select
                   className="modal-select"
                   value={event.linkedB2AId}

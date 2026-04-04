@@ -35,8 +35,8 @@ const PAGE_META: Record<string, { title: string; subtitle?: string }> = {
     subtitle: "Company ventures, health and next milestones.",
   },
   "/b2a": {
-    title: "B2A",
-    subtitle: "AI transformation opportunities for external clients.",
+    title: "Applied",
+    subtitle: "Applied AI opportunities, clients and execution fronts.",
   },
   "/notes": {
     title: "Notes",
@@ -79,7 +79,7 @@ export default function AppShell({ children, profile }: AppShellProps) {
       ? PAGE_META["/b2a"]
       : pathname.startsWith("/notes/")
       ? PAGE_META["/notes"]
-      : { title: "KIN" });
+      : { title: "kind." });
 
   const loadShellData = useCallback(async () => {
     const [{ count }, { data: verticals }, { data: b2a }] = await Promise.all([
@@ -319,7 +319,7 @@ export default function AppShell({ children, profile }: AppShellProps) {
                 </option>
               ))}
             </optgroup>
-            <optgroup label="B2A">
+            <optgroup label="Applied">
               {b2aOptions.map((item) => (
                 <option key={item.id} value={`b2a:${item.id}`}>
                   {item.name}

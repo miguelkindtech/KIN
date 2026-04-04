@@ -47,7 +47,7 @@ export default function OverviewClient() {
     (v) => v.health === "watch" || v.health === "critical" || v.status === "pending review" || v.status === "on hold"
   );
 
-  const openB2A = b2a.filter((item) => item.status !== "closed" && item.status !== "archived");
+  const openApplied = b2a.filter((item) => item.status !== "closed" && item.status !== "archived");
 
   const inactiveMembers = team.filter((m) => m.status !== "active").length;
   const activeTalent = talent.filter(
@@ -60,7 +60,9 @@ export default function OverviewClient() {
 
   const mostExposedVertical = atRiskVerticals.find((v) => v.health === "critical") || atRiskVerticals[0];
 
-  const firstB2APush = openB2A.find((item) => item.status === "proposal" || item.status === "discovery") || openB2A[0];
+  const firstAppliedPush =
+    openApplied.find((item) => item.status === "proposal" || item.status === "discovery") ||
+    openApplied[0];
 
   const exploreNotes = notes.filter((n) => n.category === "explore");
 
@@ -177,8 +179,8 @@ export default function OverviewClient() {
               <span className="metric-value">{atRiskVerticals.length}</span>
             </div>
             <div className="summary-row">
-              <span className="muted">open b2a deals</span>
-              <span className="metric-value">{openB2A.length}</span>
+              <span className="muted">open applied deals</span>
+              <span className="metric-value">{openApplied.length}</span>
             </div>
           </div>
           {atRiskVerticals.length > 0 && (
@@ -192,10 +194,10 @@ export default function OverviewClient() {
               ))}
             </div>
           )}
-          {openB2A.length > 0 && (
+          {openApplied.length > 0 && (
             <div style={{ marginTop: 12 }}>
               <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>open deals</div>
-              {openB2A.map((item) => (
+              {openApplied.map((item) => (
                 <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                   <span style={{ fontSize: 13 }}>{item.company}</span>
                   <span className="pill">{item.status}</span>
@@ -251,10 +253,10 @@ export default function OverviewClient() {
               </span>
             </div>
             <div className="summary-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
-              <span className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em" }}>first b2a push</span>
+              <span className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em" }}>first applied push</span>
               <span style={{ fontSize: 13 }}>
-                {firstB2APush
-                  ? `${firstB2APush.company} — ${firstB2APush.status}`
+                {firstAppliedPush
+                  ? `${firstAppliedPush.company} — ${firstAppliedPush.status}`
                   : "no active deals"}
               </span>
             </div>

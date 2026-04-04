@@ -115,16 +115,22 @@ input, textarea, select { color: inherit; }
 }
 .sidebar-backdrop.visible { opacity: 1; pointer-events: auto; }
 
-.brand { display: flex; flex-direction: column; gap: 5px; padding: 2px 6px 10px; }
+.brand { display: flex; flex-direction: column; gap: 7px; padding: 2px 6px 10px; }
 .brand-title { font-size: 22px; font-weight: 600; letter-spacing: 0.04em; }
 .brand-subtitle { font-size: 11px; color: var(--text2); line-height: 1.45; }
 .brand-logo {
-  width: 156px;
+  width: 144px;
   height: auto;
   display: block;
 }
 .brand-logo-light { filter: brightness(0); }
 .brand-logo-dark { filter: brightness(0) invert(1); }
+.brand-tagline {
+  max-width: 150px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text2);
+}
 
 .nav { display: flex; flex-direction: column; gap: 14px; }
 .nav-section { display: flex; flex-direction: column; gap: 4px; }
@@ -499,22 +505,14 @@ input, textarea, select { color: inherit; }
   padding: 32px;
 }
 
-.login-brand { margin-bottom: 28px; }
-.login-wordmark {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 24px;
-  color: #F5F5F7;
-}
-.login-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #AFA9EC, #7F77DD);
+.login-brand { margin-bottom: 28px; display: flex; flex-direction: column; gap: 10px; }
+.login-logo {
+  width: 144px;
+  height: auto;
+  display: block;
+  filter: brightness(0) invert(1);
 }
 .login-subtitle {
-  margin-top: 8px;
   font-size: 13px;
   color: #8E8E93;
 }
@@ -581,7 +579,7 @@ input, textarea, select { color: inherit; }
     align-items: flex-start;
   }
   .sidebar-meta { align-items: flex-start; flex-direction: column; }
-  .brand-logo { width: 148px; }
+  .brand-logo { width: 138px; }
   .powered-watermark { width: 130px; }
   .cards-grid, .note-grid, .search-grid { grid-template-columns: 1fr; }
   .talent-grid { grid-template-columns: 1fr !important; }
@@ -610,4 +608,5 @@ input, textarea, select { color: inherit; }
   .detail-page { max-width: 100%; }
   .note-meta-card { min-width: 0; }
   .login-card { padding: 24px 20px; }
+  .login-logo { width: 132px; }
 }
