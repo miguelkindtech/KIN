@@ -107,15 +107,23 @@ input, textarea, select { color: inherit; }
 .sidebar-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.28);
+  background: rgba(8,8,10,0.18);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.18s ease;
   z-index: 9;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 .sidebar-backdrop.visible { opacity: 1; pointer-events: auto; }
 
 .brand { display: flex; flex-direction: column; gap: 7px; padding: 2px 6px 10px; }
+.brand-link {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 7px;
+  width: fit-content;
+}
 .brand-title { font-size: 22px; font-weight: 600; letter-spacing: 0.04em; }
 .brand-subtitle { font-size: 11px; color: var(--text2); line-height: 1.45; }
 .brand-logo {
@@ -565,8 +573,10 @@ input, textarea, select { color: inherit; }
     border-bottom: none;
     transform: translateX(-104%);
     box-shadow: 0 20px 40px rgba(0,0,0,0.26);
+    z-index: 80;
   }
   .sidebar.mobile-open { transform: translateX(0); }
+  .sidebar-backdrop { z-index: 70; }
   .app-main { margin-left: 0; }
   .app-header { padding: 18px 14px 0; flex-direction: column; align-items: stretch; }
   .header-title-wrap { gap: 8px; }

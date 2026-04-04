@@ -59,15 +59,17 @@ export default function Sidebar({
   return (
     <aside className={`sidebar${mobileOpen ? " mobile-open" : ""}`}>
       <div className="brand">
-        <Image
-          src="/kind-logo.png"
-          alt="kind."
-          width={180}
-          height={63}
-          priority
-          className={`brand-logo brand-logo-${theme}`}
-        />
-        <div className="brand-tagline">where the company thinks.</div>
+        <Link href="/overview" className="brand-link" onClick={onNavigate}>
+          <Image
+            src="/kind-logo.png"
+            alt="kind."
+            width={180}
+            height={63}
+            priority
+            className={`brand-logo brand-logo-${theme}`}
+          />
+          <div className="brand-tagline">where the company thinks.</div>
+        </Link>
       </div>
 
       <nav className="nav">
