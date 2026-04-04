@@ -134,8 +134,11 @@ function mapB2A(rows: Record<string, unknown>[] = []): B2AItem[] {
 
 function mapEvents(rows: Record<string, unknown>[] = []): CalendarEvent[] {
   return rows.map((item) => {
-    const startTime = String(item.start_time || "09:00");
-    const endTime = String(item.end_time || addMinutes(startTime, 60));
+    const startTimeValue = item.start_time as string | null;
+    const endTimeValue = item.end_time as string | null;
+    const allDay = !startTimeValue;
+    const startTime = startTimeValue || "09:00";
+    const endTime = endTimeValue || addMinutes(startTime, 60);
     const linkedTo = String(item.linked_to || "");
 
     return {
@@ -143,6 +146,7 @@ function mapEvents(rows: Record<string, unknown>[] = []): CalendarEvent[] {
       title: String(item.title || ""),
       date: String(item.date || ""),
       time: startTime,
+      allDay,
       type: linkedTo.startsWith("vertical:")
         ? "vertical"
         : linkedTo.startsWith("b2a:")

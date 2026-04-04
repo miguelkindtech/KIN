@@ -24,12 +24,19 @@ export default function OverviewClient() {
   const weekStartStr = formatDate(weekStart);
   const weekEndStr = formatDate(weekEnd);
 
+  function sortEvents(a: (typeof events)[number], b: (typeof events)[number]) {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+    return (a.time || "").localeCompare(b.time || "");
+  }
+
+  function eventLabel(event: (typeof events)[number]) {
+    return event.allDay ? "all day" : event.time;
+  }
+
   const weekEvents = events
     .filter((e) => e.date >= weekStartStr && e.date <= weekEndStr)
-    .sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      return (a.time || "").localeCompare(b.time || "");
-    });
+    .sort(sortEvents);
 
   const todayEvents = weekEvents.filter((e) => e.date === todayStr);
 
@@ -49,10 +56,7 @@ export default function OverviewClient() {
 
   const nextMeeting = events
     .filter((e) => e.date >= todayStr && (e.type === "meeting" || e.type === "internal" || e.type === "b2a" || e.type === "vertical"))
-    .sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      return (a.time || "").localeCompare(b.time || "");
-    })[0];
+    .sort(sortEvents)[0];
 
   const mostExposedVertical = atRiskVerticals.find((v) => v.health === "critical") || atRiskVerticals[0];
 
@@ -105,7 +109,7 @@ export default function OverviewClient() {
                   return (
                     <div className="summary-row" key={ev.id}>
                       <span style={{ color: meta.color, fontWeight: 600, fontSize: 13 }}>{ev.title}</span>
-                      {ev.time && <span className="muted" style={{ fontSize: 12 }}>{ev.time}</span>}
+                      <span className="muted" style={{ fontSize: 12 }}>{eventLabel(ev)}</span>
                     </div>
                   );
                 })}
@@ -126,7 +130,7 @@ export default function OverviewClient() {
                     return (
                       <div className="summary-row" key={ev.id}>
                         <span style={{ color: meta.color, fontWeight: 600, fontSize: 13 }}>{ev.title}</span>
-                        <span className="muted" style={{ fontSize: 12 }}>{dayLabel}{ev.time ? ` · ${ev.time}` : ""}</span>
+                        <span className="muted" style={{ fontSize: 12 }}>{dayLabel} · {eventLabel(ev)}</span>
                       </div>
                     );
                   })}
@@ -242,7 +246,7 @@ export default function OverviewClient() {
             <div className="summary-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
               <span className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em" }}>next meeting</span>
               <span style={{ fontSize: 13 }}>
-                {nextMeeting ? `${nextMeeting.title}${nextMeeting.time ? ` · ${nextMeeting.time}` : ""}` : "none scheduled"}
+                {nextMeeting ? `${nextMeeting.title} · ${eventLabel(nextMeeting)}` : "none scheduled"}
               </span>
             </div>
             <div className="summary-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>

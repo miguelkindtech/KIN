@@ -228,7 +228,7 @@ export default function TeamClient() {
             <div className="section-title">pipeline</div>
             <button className="action-btn small-btn" onClick={openAddTalent}>+ add talent</button>
           </div>
-          <div className="two-col" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
+          <div className="two-col talent-grid">
             {TALENT_COLUMNS.map((col) => {
               const entries = talent.filter((t) => t.status === col.key);
               return (

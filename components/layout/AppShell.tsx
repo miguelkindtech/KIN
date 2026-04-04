@@ -60,6 +60,7 @@ export default function AppShell({ children, profile }: AppShellProps) {
   const pathname = usePathname();
   const supabase = useMemo(() => createClient(), []);
   const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [navOpen, setNavOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureText, setCaptureText] = useState("");
   const [captureContext, setCaptureContext] =
@@ -103,6 +104,10 @@ export default function AppShell({ children, profile }: AppShellProps) {
   useEffect(() => {
     void loadShellData();
   }, [loadShellData]);
+
+  useEffect(() => {
+    setNavOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     const storedTheme =
@@ -258,7 +263,17 @@ export default function AppShell({ children, profile }: AppShellProps) {
 
   return (
     <div className="app-shell">
-      <Sidebar profile={profile} theme={theme} onToggleTheme={toggleTheme} />
+      <div
+        className={`sidebar-backdrop${navOpen ? " visible" : ""}`}
+        onClick={() => setNavOpen(false)}
+      />
+      <Sidebar
+        profile={profile}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        mobileOpen={navOpen}
+        onNavigate={() => setNavOpen(false)}
+      />
 
       <div className="app-main">
         <Header
@@ -266,6 +281,7 @@ export default function AppShell({ children, profile }: AppShellProps) {
           subtitle={pageMeta.subtitle}
           inboxCount={inboxCount}
           onOpenCapture={() => setCaptureOpen(true)}
+          onOpenNav={() => setNavOpen(true)}
         />
 
         {saveStatus ? <div className="save-indicator">{saveStatus}</div> : null}

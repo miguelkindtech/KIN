@@ -235,6 +235,7 @@ export interface CalendarEvent {
   title: string;
   date: string;
   time: string;
+  allDay: boolean;
   type: string;
   duration: number;
   notes: string;

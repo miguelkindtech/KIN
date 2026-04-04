@@ -19,12 +19,16 @@ interface SidebarProps {
   profile: Profile;
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  mobileOpen?: boolean;
+  onNavigate?: () => void;
 }
 
 export default function Sidebar({
   profile,
   theme,
   onToggleTheme,
+  mobileOpen = false,
+  onNavigate,
 }: SidebarProps) {
   const pathname = usePathname();
   const initials =
@@ -37,7 +41,7 @@ export default function Sidebar({
       .toUpperCase();
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${mobileOpen ? " mobile-open" : ""}`}>
       <div className="brand">
         <div className="brand-title">KIN</div>
         <div className="brand-subtitle">
@@ -55,6 +59,7 @@ export default function Sidebar({
               className={`nav-item${
                 pathname === item.href ? " active" : ""
               }`}
+              onClick={onNavigate}
             >
               <span className="nav-icon" />
               {item.label}

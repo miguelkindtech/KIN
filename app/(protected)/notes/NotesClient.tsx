@@ -173,7 +173,7 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
           </div>
 
           {/* Right — metadata */}
-          <div className="card" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 20, minWidth: 220 }}>
+          <div className="card note-meta-card" style={{ padding: "20px", display: "flex", flexDirection: "column", gap: 20 }}>
             <div>
               <div className="detail-label">category</div>
               <div style={{ display: "flex", gap: 8, marginTop: 6 }}>

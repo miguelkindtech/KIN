@@ -91,10 +91,10 @@ export const DEFAULT_B2A: B2AItem[] = [
 ];
 
 export const DEFAULT_EVENTS: CalendarEvent[] = [
-  { id: "e1", title: "Board sync", date: "2026-04-07", time: "09:00", type: "internal", duration: 60, notes: "", attachments: [], linkedNoteId: "", linkedVerticalId: "", linkedB2AId: "" },
-  { id: "e2", title: "Compy sprint review", date: "2026-04-08", time: "10:00", type: "vertical", duration: 60, notes: "", attachments: [], linkedNoteId: "", linkedVerticalId: "compy", linkedB2AId: "" },
-  { id: "e3", title: "A. Brito discovery", date: "2026-04-09", time: "14:00", type: "b2a", duration: 60, notes: "", attachments: [], linkedNoteId: "", linkedVerticalId: "", linkedB2AId: "abrito" },
-  { id: "e4", title: "Strategy block", date: "2026-04-10", time: "11:00", type: "deep_work", duration: 90, notes: "", attachments: [], linkedNoteId: "", linkedVerticalId: "", linkedB2AId: "" },
+  { id: "e1", title: "Board sync", date: "2026-04-07", time: "09:00", allDay: false, type: "internal", duration: 60, notes: "", attachments: [], linkedNoteId: "", linkedVerticalId: "", linkedB2AId: "" },
+  { id: "e2", title: "Compy sprint review", date: "2026-04-08", time: "10:00", allDay: false, type: "vertical", duration: 60, notes: "", attachments: [], linkedNoteId: "", linkedVerticalId: "compy", linkedB2AId: "" },
+  { id: "e3", title: "A. Brito discovery", date: "2026-04-09", time: "14:00", allDay: false, type: "b2a", duration: 60, notes: "", attachments: [], linkedNoteId: "", linkedVerticalId: "", linkedB2AId: "abrito" },
+  { id: "e4", title: "Strategy block", date: "2026-04-10", time: "11:00", allDay: false, type: "deep_work", duration: 90, notes: "", attachments: [], linkedNoteId: "", linkedVerticalId: "", linkedB2AId: "" },
 ];
 
 export const DEFAULT_COSTS: Cost[] = [

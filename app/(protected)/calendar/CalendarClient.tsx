@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { useApp } from "@/providers/AppContext";
 import {
@@ -8,54 +8,82 @@ import {
   formatDate,
   addDays,
   startOfWeek,
+  getFirstDayOfMonth,
   getEventMeta,
   addMinutes,
 } from "@/lib/utils";
 import { EVENT_TYPES, WEEKDAYS } from "@/lib/constants";
 import { useAutoSave } from "@/hooks/useAutoSave";
-import { CalendarEvent, DayFollowUpItem, DocItem } from "@/lib/types";
+import type { CalendarEvent, DayFollowUpItem, DocItem } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { syncTableById } from "@/lib/supabase/sync";
 import { uploadAttachment } from "@/lib/supabase/storage";
 import Modal from "@/components/ui/Modal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-// Slots: 07:00 → 21:30 every 30 min
 function buildSlots(): string[] {
   const slots: string[] = [];
-  for (let h = 7; h <= 21; h++) {
-    slots.push(`${String(h).padStart(2, "0")}:00`);
-    if (h < 21) slots.push(`${String(h).padStart(2, "0")}:30`);
+  for (let hour = 7; hour <= 21; hour++) {
+    slots.push(`${String(hour).padStart(2, "0")}:00`);
+    if (hour < 21) slots.push(`${String(hour).padStart(2, "0")}:30`);
   }
-  // Include 21:30 as the last slot end marker
   slots.push("21:30");
   return slots;
 }
 
-const SLOTS = buildSlots(); // "07:00" … "21:30"
-const SLOT_HEIGHT = 28; // px per 30-min slot
-const HEADER_HEIGHT = 42; // px for day-head row
+const SLOTS = buildSlots();
+const SLOT_HEIGHT = 28;
+const HEADER_HEIGHT = 42;
 
-function slotIndex(time: string): number {
+function slotIndex(time: string) {
   return SLOTS.indexOf(time);
 }
 
-function slotFromIndex(idx: number): string {
-  return SLOTS[Math.max(0, Math.min(idx, SLOTS.length - 1))];
+function slotFromIndex(index: number) {
+  return SLOTS[Math.max(0, Math.min(index, SLOTS.length - 1))];
 }
 
-// Duration in minutes → number of slots
-function durationSlots(minutes: number): number {
+function durationSlots(minutes: number) {
   return Math.round(minutes / 30);
 }
 
-// ---------------------------------------------------------------------------
-// EventPill
-// ---------------------------------------------------------------------------
+function parseDateValue(dateStr: string) {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+}
+
+function formatLongDate(dateStr: string) {
+  return parseDateValue(dateStr).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function formatMonthTitle(date: Date) {
+  return date.toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function sortEvents(a: CalendarEvent, b: CalendarEvent) {
+  if (a.date !== b.date) return a.date.localeCompare(b.date);
+  if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+  return (a.time || "").localeCompare(b.time || "");
+}
+
+function eventTimeLabel(event: CalendarEvent) {
+  if (event.allDay) return "all day";
+  return `${event.time} · ${event.duration} min`;
+}
+
+function attachmentKind(attachment: DocItem) {
+  if (attachment.type.includes("pdf")) return "pdf";
+  if (attachment.type.includes("image")) return "image";
+  return attachment.type || "file";
+}
 
 function EventPill({
   event,
@@ -75,23 +103,14 @@ function EventPill({
     <div
       className="week-event"
       style={{
-        position: "absolute",
         top,
         left: 2,
         right: 2,
         height,
         background: meta.color,
-        borderRadius: 4,
-        padding: "2px 6px",
-        fontSize: "0.72rem",
-        color: "#fff",
-        cursor: "pointer",
-        overflow: "hidden",
-        zIndex: 2,
-        lineHeight: "1.3",
       }}
-      onClick={(e) => {
-        e.stopPropagation();
+      onClick={(eventClick) => {
+        eventClick.stopPropagation();
         onClick(event.id);
       }}
     >
@@ -100,10 +119,6 @@ function EventPill({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// CalendarClient
-// ---------------------------------------------------------------------------
 
 export default function CalendarClient() {
   const {
@@ -122,29 +137,39 @@ export default function CalendarClient() {
   } = useApp();
   const supabase = useMemo(() => createClient(), []);
 
-  // Week navigation
-  const [weekOffset, setWeekOffset] = useState(0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const weekBase = addDays(startOfWeek(today), weekOffset * 7);
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekBase, i));
+  const today = useMemo(() => {
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    return base;
+  }, []);
+  const todayStr = formatDate(today);
 
-  // Selection
-  const [selectedSlot, setSelectedSlot] = useState<{ date: string; slot: string } | null>(null);
+  const [viewMode, setViewMode] = useState<"month" | "detail">("month");
+  const [monthCursor, setMonthCursor] = useState(
+    new Date(today.getFullYear(), today.getMonth(), 1)
+  );
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [selectedSlot, setSelectedSlot] = useState<{
+    date: string;
+    slot: string;
+  } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
-
-  // Create modal
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
     title: "",
-    date: formatDate(today),
+    date: todayStr,
     time: "09:00",
+    allDay: false,
     type: "internal",
     duration: "60",
     notes: "",
   });
+  const [followUpInput, setFollowUpInput] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [uploadingAttachmentFor, setUploadingAttachmentFor] = useState<
+    string | null
+  >(null);
 
-  // Drag state
   const dragRef = useRef<{
     date: string;
     startIdx: number;
@@ -156,15 +181,6 @@ export default function CalendarClient() {
     endIdx: number;
   } | null>(null);
 
-  // Confirm delete
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [uploadingAttachmentFor, setUploadingAttachmentFor] = useState<string | null>(
-    null
-  );
-
-  // Follow-up input
-  const [followUpInput, setFollowUpInput] = useState("");
-
   useAutoSave(
     events,
     async (currentEvents) => {
@@ -172,8 +188,8 @@ export default function CalendarClient() {
         id: event.id,
         title: event.title,
         date: event.date,
-        start_time: event.time,
-        end_time: addMinutes(event.time, event.duration || 60),
+        start_time: event.allDay ? null : event.time,
+        end_time: event.allDay ? null : addMinutes(event.time, event.duration || 60),
         description: event.notes || "",
         linked_to: event.linkedVerticalId
           ? `vertical:${event.linkedVerticalId}`
@@ -212,16 +228,89 @@ export default function CalendarClient() {
     300
   );
 
-  // ---------------------------------------------------------------------------
-  // Event helpers
-  // ---------------------------------------------------------------------------
+  const eventsByDate = useMemo(() => {
+    const byDate: Record<string, CalendarEvent[]> = {};
+    events
+      .slice()
+      .sort(sortEvents)
+      .forEach((event) => {
+        if (!byDate[event.date]) byDate[event.date] = [];
+        byDate[event.date].push(event);
+      });
+    return byDate;
+  }, [events]);
+
+  const selectedDayEvents = eventsByDate[selectedDate] || [];
+  const followUpsForDay = dayFollowUps[selectedDate] || [];
+  const selectedSlotEvent = selectedSlot
+    ? selectedDayEvents.find(
+        (event) => !event.allDay && event.time === selectedSlot.slot
+      )
+    : null;
+
+  const detailBase = startOfWeek(parseDateValue(selectedDate));
+  const weekDays = Array.from({ length: 7 }, (_, index) =>
+    addDays(detailBase, index)
+  );
+
+  const monthYear = monthCursor.getFullYear();
+  const monthIndex = monthCursor.getMonth();
+  const firstOffset = getFirstDayOfMonth(monthYear, monthIndex);
+  const monthStart = new Date(monthYear, monthIndex, 1);
+  const monthGridStart = addDays(monthStart, -firstOffset);
+  const monthCells = Array.from({ length: 42 }, (_, index) =>
+    addDays(monthGridStart, index)
+  );
+
+  const upcomingEvents = useMemo(() => {
+    const start = selectedDate;
+    const end = formatDate(addDays(parseDateValue(selectedDate), 7));
+    return events
+      .filter((event) => event.date >= start && event.date <= end)
+      .sort(sortEvents)
+      .slice(0, 8);
+  }, [events, selectedDate]);
+
+  function selectDate(next: Date | string) {
+    const nextDate = typeof next === "string" ? parseDateValue(next) : next;
+    const nextDateStr = formatDate(nextDate);
+    setSelectedDate(nextDateStr);
+    setSelectedSlot(null);
+    setMonthCursor(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
+  }
+
+  function openCreateForDate(date: string, options?: Partial<typeof form>) {
+    setForm({
+      title: "",
+      date,
+      time: options?.time || "09:00",
+      allDay: options?.allDay ?? false,
+      type: options?.type || "internal",
+      duration: options?.duration || "60",
+      notes: options?.notes || "",
+    });
+    setShowCreate(true);
+  }
+
+  function resetForm() {
+    setForm({
+      title: "",
+      date: selectedDate,
+      time: "09:00",
+      allDay: false,
+      type: "internal",
+      duration: "60",
+      notes: "",
+    });
+  }
 
   function createEvent(patch: Partial<CalendarEvent> = {}) {
-    const ev: CalendarEvent = {
+    const event: CalendarEvent = {
       id: uid(),
       title: form.title.trim() || "untitled",
       date: form.date,
       time: form.time,
+      allDay: form.allDay,
       type: form.type,
       duration: parseInt(form.duration, 10) || 60,
       notes: form.notes,
@@ -231,18 +320,24 @@ export default function CalendarClient() {
       linkedB2AId: "",
       ...patch,
     };
-    setEvents((prev) => [...prev, ev]);
+
+    setEvents((previous) => [...previous, event]);
+    selectDate(event.date);
     setShowCreate(false);
     resetForm();
-    return ev;
+    return event;
   }
 
   function updateEvent(id: string, patch: Partial<CalendarEvent>) {
-    setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+    setEvents((previous) =>
+      previous.map((event) =>
+        event.id === id ? { ...event, ...patch } : event
+      )
+    );
   }
 
   function deleteEvent(id: string) {
-    setEvents((prev) => prev.filter((e) => e.id !== id));
+    setEvents((previous) => previous.filter((event) => event.id !== id));
     setConfirmDeleteId(null);
     setDetailId(null);
   }
@@ -251,8 +346,8 @@ export default function CalendarClient() {
     setUploadingAttachmentFor(eventId);
     try {
       const attachment = await uploadAttachment(supabase, file, "events", eventId);
-      setEvents((prev) =>
-        prev.map((event) =>
+      setEvents((previous) =>
+        previous.map((event) =>
           event.id === eventId
             ? { ...event, attachments: [...event.attachments, attachment] }
             : event
@@ -264,8 +359,8 @@ export default function CalendarClient() {
   }
 
   function removeAttachment(eventId: string, attachmentId: string) {
-    setEvents((prev) =>
-      prev.map((event) =>
+    setEvents((previous) =>
+      previous.map((event) =>
         event.id === eventId
           ? {
               ...event,
@@ -278,17 +373,45 @@ export default function CalendarClient() {
     );
   }
 
-  function resetForm() {
-    setForm({ title: "", date: formatDate(today), time: "09:00", type: "internal", duration: "60", notes: "" });
+  function setDayNote(date: string, text: string) {
+    setDayNotes((previous) => ({ ...previous, [date]: text }));
   }
 
-  // ---------------------------------------------------------------------------
-  // Drag helpers
-  // ---------------------------------------------------------------------------
+  function setDayDecision(date: string, text: string) {
+    setDayDecisions((previous) => ({ ...previous, [date]: text }));
+  }
 
-  function handleSlotMouseDown(date: string, slotIdx: number, e: MouseEvent) {
-    // Only on empty slots (no event overlapping)
-    e.preventDefault();
+  function addFollowUp(date: string, text: string) {
+    if (!text.trim()) return;
+    const item: DayFollowUpItem = {
+      id: uid(),
+      text: text.trim(),
+      done: false,
+    };
+    setDayFollowUps((previous) => ({
+      ...previous,
+      [date]: [...(previous[date] || []), item],
+    }));
+  }
+
+  function toggleFollowUp(date: string, itemId: string) {
+    setDayFollowUps((previous) => ({
+      ...previous,
+      [date]: (previous[date] || []).map((item) =>
+        item.id === itemId ? { ...item, done: !item.done } : item
+      ),
+    }));
+  }
+
+  function deleteFollowUp(date: string, itemId: string) {
+    setDayFollowUps((previous) => ({
+      ...previous,
+      [date]: (previous[date] || []).filter((item) => item.id !== itemId),
+    }));
+  }
+
+  function handleSlotMouseDown(date: string, slotIdx: number, event: MouseEvent) {
+    event.preventDefault();
     dragRef.current = { date, startIdx: slotIdx, currentIdx: slotIdx };
     setDragRange({ date, startIdx: slotIdx, endIdx: slotIdx });
   }
@@ -305,6 +428,7 @@ export default function CalendarClient() {
 
   function handleMouseUp() {
     if (!dragRef.current) return;
+
     const { date, startIdx, currentIdx } = dragRef.current;
     const minIdx = Math.min(startIdx, currentIdx);
     const maxIdx = Math.max(startIdx, currentIdx);
@@ -313,18 +437,9 @@ export default function CalendarClient() {
 
     dragRef.current = null;
     setDragRange(null);
-
-    // Open create modal prefilled
-    setForm((prev) => ({
-      ...prev,
-      date,
-      time,
-      duration: String(durationMin),
-    }));
-    setShowCreate(true);
+    openCreateForDate(date, { time, duration: String(durationMin), allDay: false });
   }
 
-  // Attach global mouseup
   useEffect(() => {
     window.addEventListener("mouseup", handleMouseUp);
     return () => window.removeEventListener("mouseup", handleMouseUp);
@@ -334,56 +449,233 @@ export default function CalendarClient() {
     return <div className="loading">Loading calendar...</div>;
   }
 
-  // ---------------------------------------------------------------------------
-  // Day notes / follow-ups / decisions helpers
-  // ---------------------------------------------------------------------------
+  function renderDayPanel(showSlotCard: boolean) {
+    return (
+      <div className="calendar-panel-stack">
+        {showSlotCard ? (
+          <div className="card calendar-side-section">
+            <div className="detail-label" style={{ marginBottom: 6 }}>
+              {formatLongDate(selectedDate)}
+            </div>
 
-  function setDayNote(date: string, text: string) {
-    setDayNotes((prev) => ({ ...prev, [date]: text }));
+            {selectedSlot ? (
+              selectedSlotEvent ? (
+                <div>
+                  <div className="calendar-day-event-title">
+                    {selectedSlotEvent.title}
+                  </div>
+                  <div className="calendar-day-event-meta">
+                    {eventTimeLabel(selectedSlotEvent)} · {selectedSlotEvent.type}
+                  </div>
+                  <button
+                    className="ghost-btn small-btn"
+                    style={{ marginTop: 10 }}
+                    onClick={() => setDetailId(selectedSlotEvent.id)}
+                  >
+                    open event
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                    {selectedSlot.slot} — empty slot
+                  </div>
+                  <button
+                    className="action-btn small-btn"
+                    onClick={() =>
+                      openCreateForDate(selectedDate, {
+                        time: selectedSlot.slot,
+                        allDay: false,
+                      })
+                    }
+                  >
+                    + add event here
+                  </button>
+                </div>
+              )
+            ) : (
+              <div className="muted" style={{ fontSize: 12 }}>
+                tap a slot to inspect or create.
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        <div className="card calendar-side-section calendar-day-card">
+          <div className="section-header">
+            <div>
+              <div className="detail-label">selected day</div>
+              <div className="calendar-day-title">{formatLongDate(selectedDate)}</div>
+            </div>
+            <button
+              className="action-btn small-btn"
+              onClick={() => openCreateForDate(selectedDate)}
+            >
+              + event
+            </button>
+          </div>
+
+          {selectedDayEvents.length === 0 ? (
+            <div className="calendar-empty">No events for this day yet.</div>
+          ) : (
+            <div className="calendar-day-list">
+              {selectedDayEvents.map((event) => {
+                const meta = getEventMeta(event.type);
+                return (
+                  <div className="calendar-day-event" key={event.id}>
+                    <div className="calendar-day-event-main">
+                      <div className="calendar-day-event-title">{event.title}</div>
+                      <div className="calendar-day-event-meta">
+                        {event.allDay ? (
+                          <span className="calendar-all-day">all day</span>
+                        ) : (
+                          `${event.time} · ${event.duration} min`
+                        )}
+                        {" · "}
+                        {meta.label}
+                      </div>
+                    </div>
+                    <div className="calendar-day-event-actions">
+                      <span
+                        className="calendar-event-dot"
+                        style={{ background: meta.color }}
+                      />
+                      <button
+                        className="ghost-btn small-btn"
+                        onClick={() => setDetailId(event.id)}
+                      >
+                        open
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="card calendar-side-section">
+          <div className="detail-label" style={{ marginBottom: 6 }}>
+            notes for the day
+          </div>
+          <textarea
+            className="notes-area"
+            rows={3}
+            value={dayNotes[selectedDate] || ""}
+            placeholder="capture thoughts for this day..."
+            onChange={(event) => setDayNote(selectedDate, event.target.value)}
+          />
+        </div>
+
+        <div className="card calendar-side-section">
+          <div className="detail-label" style={{ marginBottom: 6 }}>
+            decisions
+          </div>
+          <textarea
+            className="notes-area"
+            rows={3}
+            value={dayDecisions[selectedDate] || ""}
+            placeholder="decisions made today..."
+            onChange={(event) => setDayDecision(selectedDate, event.target.value)}
+          />
+        </div>
+
+        <div className="card calendar-side-section">
+          <div className="detail-label" style={{ marginBottom: 8 }}>
+            follow-ups
+          </div>
+          <div className="list-stack">
+            {followUpsForDay.map((item) => (
+              <div key={item.id} className="list-item">
+                <button
+                  className={`todo-check${item.done ? " done" : ""}`}
+                  onClick={() => toggleFollowUp(selectedDate, item.id)}
+                  style={{ flexShrink: 0 }}
+                  aria-label={item.done ? "uncheck" : "check"}
+                >
+                  {item.done ? "✓" : ""}
+                </button>
+                <span
+                  className="list-item-main"
+                  style={{
+                    fontSize: 13,
+                    textDecoration: item.done ? "line-through" : "none",
+                    opacity: item.done ? 0.5 : 1,
+                  }}
+                >
+                  {item.text}
+                </span>
+                <button
+                  className="item-delete"
+                  onClick={() => deleteFollowUp(selectedDate, item.id)}
+                  title="remove"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+            <input
+              className="modal-input"
+              style={{ flex: 1, fontSize: 12 }}
+              value={followUpInput}
+              placeholder="add follow-up..."
+              onChange={(event) => setFollowUpInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  addFollowUp(selectedDate, followUpInput);
+                  setFollowUpInput("");
+                }
+              }}
+            />
+            <button
+              className="ghost-btn small-btn"
+              onClick={() => {
+                addFollowUp(selectedDate, followUpInput);
+                setFollowUpInput("");
+              }}
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        <div className="card calendar-side-section">
+          <div className="detail-label" style={{ marginBottom: 8 }}>
+            next 7 days
+          </div>
+          {upcomingEvents.length === 0 ? (
+            <div className="calendar-empty">Nothing scheduled yet.</div>
+          ) : (
+            <div className="calendar-day-list">
+              {upcomingEvents.map((event) => (
+                <div className="calendar-day-event" key={event.id}>
+                  <div className="calendar-day-event-main">
+                    <div className="calendar-day-event-title">{event.title}</div>
+                    <div className="calendar-day-event-meta">
+                      {formatLongDate(event.date)}
+                    </div>
+                  </div>
+                  <div className="calendar-day-event-actions">
+                    {event.allDay ? (
+                      <span className="calendar-all-day">all day</span>
+                    ) : (
+                      <span className="pill">{event.time}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
-
-  function setDayDecision(date: string, text: string) {
-    setDayDecisions((prev) => ({ ...prev, [date]: text }));
-  }
-
-  function addFollowUp(date: string, text: string) {
-    if (!text.trim()) return;
-    const item: DayFollowUpItem = { id: uid(), text: text.trim(), done: false };
-    setDayFollowUps((prev) => ({
-      ...prev,
-      [date]: [...(prev[date] || []), item],
-    }));
-  }
-
-  function toggleFollowUp(date: string, itemId: string) {
-    setDayFollowUps((prev) => ({
-      ...prev,
-      [date]: (prev[date] || []).map((f) =>
-        f.id === itemId ? { ...f, done: !f.done } : f
-      ),
-    }));
-  }
-
-  function deleteFollowUp(date: string, itemId: string) {
-    setDayFollowUps((prev) => ({
-      ...prev,
-      [date]: (prev[date] || []).filter((f) => f.id !== itemId),
-    }));
-  }
-
-  function attachmentKind(attachment: DocItem) {
-    if (attachment.type.includes("pdf")) return "pdf";
-    if (attachment.type.includes("image")) return "image";
-    return attachment.type || "file";
-  }
-
-  // ---------------------------------------------------------------------------
-  // Detail view
-  // ---------------------------------------------------------------------------
 
   if (detailId !== null) {
-    const ev = events.find((e) => e.id === detailId);
-    if (!ev) {
+    const event = events.find((item) => item.id === detailId);
+    if (!event) {
       setDetailId(null);
       return null;
     }
@@ -406,51 +698,90 @@ export default function CalendarClient() {
                 width: "100%",
                 marginBottom: 12,
               }}
-              value={ev.title}
+              value={event.title}
               placeholder="event title"
-              onChange={(e) => updateEvent(ev.id, { title: e.target.value })}
+              onChange={(eventInput) =>
+                updateEvent(event.id, { title: eventInput.target.value })
+              }
             />
 
-            <div className="detail-meta-row" style={{ flexWrap: "wrap", gap: 10 }}>
+            <div className="detail-meta-row" style={{ gap: 10 }}>
               <span className="detail-label">date</span>
               <input
                 className="modal-input"
                 type="date"
-                value={ev.date}
-                onChange={(e) => updateEvent(ev.id, { date: e.target.value })}
+                value={event.date}
+                onChange={(eventInput) =>
+                  updateEvent(event.id, { date: eventInput.target.value })
+                }
                 style={{ width: 140 }}
               />
 
-              <span className="detail-label">time</span>
-              <input
-                className="modal-input"
-                type="time"
-                value={ev.time}
-                onChange={(e) => updateEvent(ev.id, { time: e.target.value })}
-                style={{ width: 110 }}
-              />
+              <label
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <input
+                  type="checkbox"
+                  checked={event.allDay}
+                  onChange={(eventInput) =>
+                    updateEvent(event.id, { allDay: eventInput.target.checked })
+                  }
+                />
+                <span className="detail-label" style={{ marginBottom: 0 }}>
+                  all day
+                </span>
+              </label>
+
+              {!event.allDay ? (
+                <>
+                  <span className="detail-label">time</span>
+                  <input
+                    className="modal-input"
+                    type="time"
+                    value={event.time}
+                    onChange={(eventInput) =>
+                      updateEvent(event.id, { time: eventInput.target.value })
+                    }
+                    style={{ width: 110 }}
+                  />
+                </>
+              ) : null}
 
               <span className="detail-label">type</span>
               <select
                 className="modal-select"
-                value={ev.type}
-                onChange={(e) => updateEvent(ev.id, { type: e.target.value })}
+                value={event.type}
+                onChange={(eventInput) =>
+                  updateEvent(event.id, { type: eventInput.target.value })
+                }
               >
-                {EVENT_TYPES.map((t) => (
-                  <option key={t.id} value={t.id}>{t.label}</option>
+                {EVENT_TYPES.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.label}
+                  </option>
                 ))}
               </select>
 
-              <span className="detail-label">duration</span>
-              <select
-                className="modal-select"
-                value={String(ev.duration)}
-                onChange={(e) => updateEvent(ev.id, { duration: parseInt(e.target.value, 10) })}
-              >
-                {[30, 60, 90, 120].map((d) => (
-                  <option key={d} value={d}>{d} min</option>
-                ))}
-              </select>
+              {!event.allDay ? (
+                <>
+                  <span className="detail-label">duration</span>
+                  <select
+                    className="modal-select"
+                    value={String(event.duration)}
+                    onChange={(eventInput) =>
+                      updateEvent(event.id, {
+                        duration: parseInt(eventInput.target.value, 10),
+                      })
+                    }
+                  >
+                    {[30, 60, 90, 120].map((duration) => (
+                      <option key={duration} value={duration}>
+                        {duration} min
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : null}
             </div>
           </div>
 
@@ -458,26 +789,39 @@ export default function CalendarClient() {
             <div className="detail-label">notes</div>
             <textarea
               className="notes-area"
-              value={ev.notes}
+              value={event.notes}
               placeholder="event notes"
               rows={4}
-              onChange={(e) => updateEvent(ev.id, { notes: e.target.value })}
+              onChange={(eventInput) =>
+                updateEvent(event.id, { notes: eventInput.target.value })
+              }
             />
           </div>
 
           <div className="detail-section">
             <div className="section-title">links</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+                marginTop: 10,
+              }}
+            >
               <div>
                 <div className="detail-label">linked note</div>
                 <select
                   className="modal-select"
-                  value={ev.linkedNoteId}
-                  onChange={(e) => updateEvent(ev.id, { linkedNoteId: e.target.value })}
+                  value={event.linkedNoteId}
+                  onChange={(eventInput) =>
+                    updateEvent(event.id, { linkedNoteId: eventInput.target.value })
+                  }
                 >
                   <option value="">none</option>
-                  {notes.map((n) => (
-                    <option key={n.id} value={n.id}>{n.title || "untitled"}</option>
+                  {notes.map((note) => (
+                    <option key={note.id} value={note.id}>
+                      {note.title || "untitled"}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -485,26 +829,40 @@ export default function CalendarClient() {
                 <div className="detail-label">linked vertical</div>
                 <select
                   className="modal-select"
-                  value={ev.linkedVerticalId}
-                  onChange={(e) => updateEvent(ev.id, { linkedVerticalId: e.target.value })}
+                  value={event.linkedVerticalId}
+                  onChange={(eventInput) =>
+                    updateEvent(event.id, {
+                      linkedVerticalId: eventInput.target.value,
+                    })
+                  }
                 >
                   <option value="">none</option>
-                  {verticals.filter((v) => !v.proposed).map((v) => (
-                    <option key={v.id} value={v.id}>{v.name}</option>
-                  ))}
+                  {verticals
+                    .filter((vertical) => !vertical.proposed)
+                    .map((vertical) => (
+                      <option key={vertical.id} value={vertical.id}>
+                        {vertical.name}
+                      </option>
+                    ))}
                 </select>
               </div>
               <div>
                 <div className="detail-label">linked b2a</div>
                 <select
                   className="modal-select"
-                  value={ev.linkedB2AId}
-                  onChange={(e) => updateEvent(ev.id, { linkedB2AId: e.target.value })}
+                  value={event.linkedB2AId}
+                  onChange={(eventInput) =>
+                    updateEvent(event.id, { linkedB2AId: eventInput.target.value })
+                  }
                 >
                   <option value="">none</option>
-                  {b2a.filter((b) => !b.proposed).map((b) => (
-                    <option key={b.id} value={b.id}>{b.company}</option>
-                  ))}
+                  {b2a
+                    .filter((item) => !item.proposed)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.company}
+                      </option>
+                    ))}
                 </select>
               </div>
             </div>
@@ -514,25 +872,24 @@ export default function CalendarClient() {
             <div className="section-header">
               <div className="section-title">attachments</div>
               <label className="ghost-btn small-btn">
-                {uploadingAttachmentFor === ev.id ? "uploading..." : "+ upload"}
+                {uploadingAttachmentFor === event.id ? "uploading..." : "+ upload"}
                 <input
                   type="file"
                   hidden
-                  onChange={async (event) => {
-                    const file = event.target.files?.[0];
+                  onChange={async (uploadEvent) => {
+                    const file = uploadEvent.target.files?.[0];
                     if (!file) return;
-                    await addAttachment(ev.id, file);
-                    event.target.value = "";
+                    await addAttachment(event.id, file);
+                    uploadEvent.target.value = "";
                   }}
                 />
               </label>
             </div>
-            {ev.attachments.length === 0 && (
+            {event.attachments.length === 0 ? (
               <div className="empty-state">no attachments yet.</div>
-            )}
-            {ev.attachments.length > 0 && (
+            ) : (
               <div className="section-stack">
-                {ev.attachments.map((attachment) => (
+                {event.attachments.map((attachment) => (
                   <div key={attachment.id} className="list-item">
                     <div className="list-item-main">
                       <a href={attachment.url} target="_blank" rel="noreferrer">
@@ -542,7 +899,7 @@ export default function CalendarClient() {
                     </div>
                     <button
                       className="item-delete"
-                      onClick={() => removeAttachment(ev.id, attachment.id)}
+                      onClick={() => removeAttachment(event.id, attachment.id)}
                       title="remove attachment"
                     >
                       ×
@@ -556,7 +913,7 @@ export default function CalendarClient() {
           <div className="detail-section" style={{ marginTop: 32 }}>
             <button
               className="danger-btn small-btn"
-              onClick={() => setConfirmDeleteId(ev.id)}
+              onClick={() => setConfirmDeleteId(event.id)}
             >
               delete event
             </button>
@@ -567,292 +924,279 @@ export default function CalendarClient() {
           show={confirmDeleteId !== null}
           onClose={() => setConfirmDeleteId(null)}
           onConfirm={() => deleteEvent(confirmDeleteId!)}
-          label={`"${ev.title}"`}
+          label={`"${event.title}"`}
         />
       </div>
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Calendar view
-  // ---------------------------------------------------------------------------
-
-  const selectedDate = selectedSlot?.date ?? formatDate(today);
-
-  // Events map: date → events[]
-  const eventsByDate: Record<string, CalendarEvent[]> = {};
-  events.forEach((ev) => {
-    if (!eventsByDate[ev.date]) eventsByDate[ev.date] = [];
-    eventsByDate[ev.date].push(ev);
-  });
-
-  const selectedDayEvents = eventsByDate[selectedDate] || [];
-  const selectedSlotEvent = selectedSlot
-    ? selectedDayEvents.find((ev) => ev.time === selectedSlot.slot)
-    : null;
-
-  const followUpsForDay = dayFollowUps[selectedDate] || [];
-
   return (
     <div className="page">
-      {/* Week navigation */}
-      <div className="page-header">
+      <div className="calendar-toolbar">
         <div>
           <div className="page-title">calendar</div>
           <div className="page-subtitle">
-            {weekBase.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
-            {" — "}
-            {addDays(weekBase, 6).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+            {viewMode === "month"
+              ? formatMonthTitle(monthCursor)
+              : `${detailBase.toLocaleDateString("en-GB", {
+                  day: "numeric",
+                  month: "long",
+                })} — ${addDays(detailBase, 6).toLocaleDateString("en-GB", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}`}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button className="ghost-btn" onClick={() => setWeekOffset((o) => o - 1)}>‹ prev</button>
-          <button className="ghost-btn" onClick={() => { setWeekOffset(0); }}>today</button>
-          <button className="ghost-btn" onClick={() => setWeekOffset((o) => o + 1)}>next ›</button>
-          <button
-            className="action-btn"
-            onClick={() => {
-              setForm((prev) => ({ ...prev, date: selectedDate }));
-              setShowCreate(true);
-            }}
-          >
-            + event
-          </button>
+
+        <div className="calendar-toolbar-group">
+          <div className="calendar-mode-switch">
+            <button
+              className={viewMode === "month" ? "active" : ""}
+              onClick={() => setViewMode("month")}
+              type="button"
+            >
+              calendar
+            </button>
+            <button
+              className={viewMode === "detail" ? "active" : ""}
+              onClick={() => setViewMode("detail")}
+              type="button"
+            >
+              detail
+            </button>
+          </div>
+
+          {viewMode === "month" ? (
+            <>
+              <button
+                className="ghost-btn"
+                onClick={() => {
+                  const next = new Date(monthYear, monthIndex - 1, 1);
+                  setMonthCursor(next);
+                  selectDate(next);
+                }}
+              >
+                ‹ prev
+              </button>
+              <button
+                className="ghost-btn"
+                onClick={() => {
+                  setMonthCursor(new Date(today.getFullYear(), today.getMonth(), 1));
+                  selectDate(today);
+                }}
+              >
+                today
+              </button>
+              <button
+                className="ghost-btn"
+                onClick={() => {
+                  const next = new Date(monthYear, monthIndex + 1, 1);
+                  setMonthCursor(next);
+                  selectDate(next);
+                }}
+              >
+                next ›
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="ghost-btn"
+                onClick={() => selectDate(addDays(parseDateValue(selectedDate), -7))}
+              >
+                ‹ prev
+              </button>
+              <button className="ghost-btn" onClick={() => selectDate(today)}>
+                today
+              </button>
+              <button
+                className="ghost-btn"
+                onClick={() => selectDate(addDays(parseDateValue(selectedDate), 7))}
+              >
+                next ›
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="calendar-shell">
-        {/* ── Week grid ── */}
-        <div className="week-grid-wrap">
-          {/* Hours column + day columns */}
-          <div style={{ display: "flex" }}>
-            {/* Hour labels */}
-            <div className="week-grid-hours">
-              <div style={{ height: HEADER_HEIGHT }} /> {/* spacer for day head */}
-              {SLOTS.slice(0, -1).map((slot) => (
-                <div
-                  key={slot}
-                  className="week-grid-hour"
-                  style={{ height: SLOT_HEIGHT }}
-                >
-                  {slot.endsWith(":00") ? slot : ""}
+      {viewMode === "month" ? (
+        <div className="calendar-month-shell">
+          <div className="calendar-month-wrap">
+            <div className="calendar-month-header">
+              {WEEKDAYS.map((weekday) => (
+                <div className="calendar-month-label" key={weekday}>
+                  {weekday}
                 </div>
               ))}
             </div>
 
-            {/* Day columns */}
-            <div className="week-grid-days">
-              {weekDays.map((day) => {
-                const dateStr = formatDate(day);
-                const isToday = dateStr === formatDate(today);
-                const dayEvents = eventsByDate[dateStr] || [];
+            <div className="calendar-month-grid">
+              {monthCells.map((cell) => {
+                const dateStr = formatDate(cell);
+                const cellEvents = (eventsByDate[dateStr] || []).slice(0, 2);
+                const overflowCount = Math.max(
+                  0,
+                  (eventsByDate[dateStr] || []).length - cellEvents.length
+                );
+                const isSelected = dateStr === selectedDate;
+                const isToday = dateStr === todayStr;
+                const inCurrentMonth = cell.getMonth() === monthIndex;
 
                 return (
-                  <div key={dateStr} className="week-day">
-                    {/* Day header */}
-                    <div
-                      className={`week-day-head${isToday ? " today" : ""}`}
-                      style={{ height: HEADER_HEIGHT }}
-                    >
-                      <span className="week-day-label">
-                        {WEEKDAYS[weekDays.findIndex((candidate) => candidate.getTime() === day.getTime())]}
-                      </span>
-                      <span className="week-day-number">{day.getDate()}</span>
+                  <button
+                    key={dateStr}
+                    className={`calendar-month-cell${
+                      inCurrentMonth ? "" : " other-month"
+                    }${isSelected ? " selected" : ""}${isToday ? " today" : ""}`}
+                    onClick={() => selectDate(cell)}
+                    type="button"
+                  >
+                    <div className="calendar-month-day">
+                      <span className="calendar-month-number">{cell.getDate()}</span>
+                      {(eventsByDate[dateStr] || []).length > 0 ? (
+                        <span className="calendar-month-badge">
+                          {(eventsByDate[dateStr] || []).length}
+                        </span>
+                      ) : null}
                     </div>
 
-                    {/* Slot rows — relative container for event positioning */}
-                    <div style={{ position: "relative" }}>
-                      {/* Background slot rows */}
-                      {SLOTS.slice(0, -1).map((slot, idx) => {
-                        const isDragged =
-                          dragRange !== null &&
-                          dragRange.date === dateStr &&
-                          idx >= Math.min(dragRange.startIdx, dragRange.endIdx) &&
-                          idx <= Math.max(dragRange.startIdx, dragRange.endIdx);
-                        const isSelected =
-                          selectedSlot?.date === dateStr && selectedSlot?.slot === slot;
-
+                    <div className="calendar-month-events">
+                      {cellEvents.map((event) => {
+                        const meta = getEventMeta(event.type);
                         return (
-                          <div
-                            key={slot}
-                            className={`week-slot${isSelected ? " selected" : ""}${isDragged ? " dragged" : ""}`}
-                            style={{ height: SLOT_HEIGHT }}
-                            onClick={() => {
-                              setSelectedSlot({ date: dateStr, slot });
-                            }}
-                            onMouseDown={(e) => handleSlotMouseDown(dateStr, idx, e)}
-                            onMouseEnter={() => handleSlotMouseEnter(dateStr, idx)}
-                            onDoubleClick={() => {
-                              const ev = dayEvents.find((e) => e.time === slot);
-                              if (ev) setDetailId(ev.id);
-                            }}
-                          />
+                          <div className="calendar-month-event" key={event.id}>
+                            <span
+                              className="calendar-event-dot"
+                              style={{ background: meta.color }}
+                            />
+                            <span className="calendar-event-text">
+                              {event.allDay ? "All day" : event.time} · {event.title}
+                            </span>
+                          </div>
                         );
                       })}
-
-                      {/* Absolute-positioned events */}
-                      {dayEvents.map((ev) => {
-                        const idx = slotIndex(ev.time);
-                        if (idx < 0) return null;
-                        return (
-                          <EventPill
-                            key={ev.id}
-                            event={ev}
-                            topSlot={idx}
-                            onClick={setDetailId}
-                          />
-                        );
-                      })}
+                      {overflowCount > 0 ? (
+                        <div className="calendar-more-events">
+                          +{overflowCount} more
+                        </div>
+                      ) : null}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
           </div>
+
+          {renderDayPanel(false)}
         </div>
-
-        {/* ── Sidebar ── */}
-        <div className="calendar-sidebar">
-          {/* Selected date label */}
-          <div className="card" style={{ marginBottom: 12, padding: "14px 16px" }}>
-            <div className="detail-label" style={{ marginBottom: 6 }}>
-              {new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-GB", {
-                weekday: "long", day: "numeric", month: "long",
-              })}
-            </div>
-
-            {selectedSlot ? (
-              selectedSlotEvent ? (
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{selectedSlotEvent.title}</div>
-                  <div className="muted" style={{ fontSize: "0.8rem" }}>
-                    {selectedSlotEvent.time} · {selectedSlotEvent.duration}min · {selectedSlotEvent.type}
-                  </div>
-                  <button
-                    className="ghost-btn small-btn"
-                    style={{ marginTop: 8 }}
-                    onClick={() => setDetailId(selectedSlotEvent.id)}
+      ) : (
+        <div className="calendar-shell">
+          <div className="week-grid-wrap">
+            <div style={{ display: "flex" }}>
+              <div className="week-grid-hours">
+                <div style={{ height: HEADER_HEIGHT }} />
+                {SLOTS.slice(0, -1).map((slot) => (
+                  <div
+                    key={slot}
+                    className="week-grid-hour"
+                    style={{ height: SLOT_HEIGHT }}
                   >
-                    open →
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <div className="muted" style={{ fontSize: "0.8rem", marginBottom: 8 }}>
-                    {selectedSlot.slot} — empty slot
+                    {slot.endsWith(":00") ? slot : ""}
                   </div>
-                  <button
-                    className="action-btn small-btn"
-                    onClick={() => {
-                      setForm((prev) => ({
-                        ...prev,
-                        date: selectedDate,
-                        time: selectedSlot.slot,
-                      }));
-                      setShowCreate(true);
-                    }}
-                  >
-                    + add block here
-                  </button>
-                </div>
-              )
-            ) : (
-              <div className="muted" style={{ fontSize: "0.8rem" }}>
-                click a slot to select it
+                ))}
               </div>
-            )}
-          </div>
 
-          {/* Day notes */}
-          <div className="card" style={{ marginBottom: 12, padding: "14px 16px" }}>
-            <div className="detail-label" style={{ marginBottom: 6 }}>notes for the day</div>
-            <textarea
-              className="notes-area"
-              rows={3}
-              value={dayNotes[selectedDate] || ""}
-              placeholder="capture thoughts for this day…"
-              onChange={(e) => setDayNote(selectedDate, e.target.value)}
-            />
-          </div>
+              <div className="week-grid-days">
+                {weekDays.map((day, index) => {
+                  const dateStr = formatDate(day);
+                  const isToday = dateStr === todayStr;
+                  const dayEvents = eventsByDate[dateStr] || [];
+                  const timedEvents = dayEvents.filter((event) => !event.allDay);
+                  const allDayEvents = dayEvents.filter((event) => event.allDay);
 
-          {/* Decisions */}
-          <div className="card" style={{ marginBottom: 12, padding: "14px 16px" }}>
-            <div className="detail-label" style={{ marginBottom: 6 }}>decisions</div>
-            <textarea
-              className="notes-area"
-              rows={3}
-              value={dayDecisions[selectedDate] || ""}
-              placeholder="decisions made today…"
-              onChange={(e) => setDayDecision(selectedDate, e.target.value)}
-            />
-          </div>
+                  return (
+                    <div key={dateStr} className="week-day">
+                      <button
+                        className={`week-day-head${isToday ? " today" : ""}`}
+                        style={{ height: HEADER_HEIGHT }}
+                        onClick={() => selectDate(day)}
+                        type="button"
+                      >
+                        <span className="week-day-label">{WEEKDAYS[index]}</span>
+                        <span className="week-day-number">{day.getDate()}</span>
+                        {allDayEvents.length > 0 ? (
+                          <div className="dim" style={{ fontSize: 10, marginTop: 2 }}>
+                            {allDayEvents.length} all day
+                          </div>
+                        ) : null}
+                      </button>
 
-          {/* Follow-ups */}
-          <div className="card" style={{ padding: "14px 16px" }}>
-            <div className="detail-label" style={{ marginBottom: 8 }}>follow-ups</div>
-            <div className="list-stack">
-              {followUpsForDay.map((item) => (
-                <div key={item.id} className="list-item">
-                  <button
-                    className={`todo-check${item.done ? " done" : ""}`}
-                    onClick={() => toggleFollowUp(selectedDate, item.id)}
-                    style={{ flexShrink: 0 }}
-                    aria-label={item.done ? "uncheck" : "check"}
-                  >
-                    {item.done ? "✓" : ""}
-                  </button>
-                  <span
-                    className="list-item-main"
-                    style={{
-                      fontSize: "0.85rem",
-                      textDecoration: item.done ? "line-through" : "none",
-                      opacity: item.done ? 0.5 : 1,
-                    }}
-                  >
-                    {item.text}
-                  </span>
-                  <button
-                    className="item-delete"
-                    onClick={() => deleteFollowUp(selectedDate, item.id)}
-                    title="remove"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-              <input
-                className="modal-input"
-                style={{ flex: 1, fontSize: "0.8rem" }}
-                value={followUpInput}
-                placeholder="add follow-up…"
-                onChange={(e) => setFollowUpInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    addFollowUp(selectedDate, followUpInput);
-                    setFollowUpInput("");
-                  }
-                }}
-              />
-              <button
-                className="ghost-btn small-btn"
-                onClick={() => {
-                  addFollowUp(selectedDate, followUpInput);
-                  setFollowUpInput("");
-                }}
-              >
-                +
-              </button>
+                      <div style={{ position: "relative" }}>
+                        {SLOTS.slice(0, -1).map((slot, slotIdx) => {
+                          const isDragged =
+                            dragRange !== null &&
+                            dragRange.date === dateStr &&
+                            slotIdx >= Math.min(dragRange.startIdx, dragRange.endIdx) &&
+                            slotIdx <= Math.max(dragRange.startIdx, dragRange.endIdx);
+                          const isSelected =
+                            selectedSlot?.date === dateStr &&
+                            selectedSlot?.slot === slot;
+
+                          return (
+                            <div
+                              key={slot}
+                              className={`week-slot${isSelected ? " selected" : ""}${
+                                isDragged ? " dragged" : ""
+                              }`}
+                              style={{ height: SLOT_HEIGHT }}
+                              onClick={() => {
+                                selectDate(dateStr);
+                                setSelectedSlot({ date: dateStr, slot });
+                              }}
+                              onMouseDown={(event) =>
+                                handleSlotMouseDown(dateStr, slotIdx, event)
+                              }
+                              onMouseEnter={() => handleSlotMouseEnter(dateStr, slotIdx)}
+                              onDoubleClick={() => {
+                                const event = timedEvents.find((item) => item.time === slot);
+                                if (event) setDetailId(event.id);
+                              }}
+                            />
+                          );
+                        })}
+
+                        {timedEvents.map((event) => {
+                          const indexAt = slotIndex(event.time);
+                          if (indexAt < 0) return null;
+                          return (
+                            <EventPill
+                              key={event.id}
+                              event={event}
+                              topSlot={indexAt}
+                              onClick={setDetailId}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
+
+          {renderDayPanel(true)}
         </div>
-      </div>
+      )}
 
-      {/* ── Create event modal ── */}
       <Modal
         show={showCreate}
-        onClose={() => { setShowCreate(false); resetForm(); }}
+        onClose={() => {
+          setShowCreate(false);
+          resetForm();
+        }}
         title="new event"
       >
         <div className="modal-field">
@@ -861,7 +1205,9 @@ export default function CalendarClient() {
             className="modal-input"
             value={form.title}
             placeholder="event title"
-            onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+            onChange={(event) =>
+              setForm((previous) => ({ ...previous, title: event.target.value }))
+            }
           />
         </div>
         <div className="modal-field">
@@ -870,50 +1216,109 @@ export default function CalendarClient() {
             className="modal-input"
             type="date"
             value={form.date}
-            onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))}
+            onChange={(event) =>
+              setForm((previous) => ({ ...previous, date: event.target.value }))
+            }
           />
         </div>
         <div className="modal-field">
-          <label className="modal-label">time</label>
-          <input
-            className="modal-input"
-            type="time"
-            value={form.time}
-            onChange={(e) => setForm((p) => ({ ...p, time: e.target.value }))}
-          />
+          <label
+            style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+          >
+            <input
+              type="checkbox"
+              checked={form.allDay}
+              onChange={(event) =>
+                setForm((previous) => ({
+                  ...previous,
+                  allDay: event.target.checked,
+                }))
+              }
+            />
+            <span className="modal-label" style={{ marginBottom: 0 }}>
+              all day
+            </span>
+          </label>
         </div>
+        {!form.allDay ? (
+          <>
+            <div className="modal-field">
+              <label className="modal-label">time</label>
+              <input
+                className="modal-input"
+                type="time"
+                value={form.time}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    time: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="modal-field">
+              <label className="modal-label">duration</label>
+              <select
+                className="modal-select"
+                value={form.duration}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    duration: event.target.value,
+                  }))
+                }
+              >
+                {[30, 60, 90, 120].map((duration) => (
+                  <option key={duration} value={duration}>
+                    {duration} min
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        ) : null}
         <div className="modal-field">
           <label className="modal-label">type</label>
           <select
             className="modal-select"
             value={form.type}
-            onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}
+            onChange={(event) =>
+              setForm((previous) => ({ ...previous, type: event.target.value }))
+            }
           >
-            {EVENT_TYPES.map((t) => (
-              <option key={t.id} value={t.id}>{t.label}</option>
+            {EVENT_TYPES.map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.label}
+              </option>
             ))}
           </select>
         </div>
         <div className="modal-field">
-          <label className="modal-label">duration</label>
-          <select
-            className="modal-select"
-            value={form.duration}
-            onChange={(e) => setForm((p) => ({ ...p, duration: e.target.value }))}
-          >
-            {[30, 60, 90, 120].map((d) => (
-              <option key={d} value={d}>{d} min</option>
-            ))}
-          </select>
+          <label className="modal-label">notes</label>
+          <textarea
+            className="notes-area"
+            rows={3}
+            value={form.notes}
+            onChange={(event) =>
+              setForm((previous) => ({ ...previous, notes: event.target.value }))
+            }
+            placeholder="optional context"
+          />
         </div>
         <div className="modal-actions">
-          <button className="ghost-btn" onClick={() => { setShowCreate(false); resetForm(); }}>
+          <button
+            className="ghost-btn"
+            onClick={() => {
+              setShowCreate(false);
+              resetForm();
+            }}
+          >
             cancel
           </button>
           <button
             className="action-btn"
             onClick={() => createEvent()}
-            disabled={!form.title.trim() && true}
+            disabled={!form.title.trim()}
           >
             create
           </button>
