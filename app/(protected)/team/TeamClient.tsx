@@ -159,13 +159,6 @@ export default function TeamClient() {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title">team</div>
-          <div className="page-subtitle">People and talent pipeline.</div>
-        </div>
-      </div>
-
       {/* Tabs */}
       <div className="toolbar" style={{ marginBottom: 24 }}>
         <button

@@ -84,13 +84,6 @@ export default function OverviewClient() {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title">overview</div>
-          <div className="page-subtitle">your executive command center.</div>
-        </div>
-      </div>
-
       {/* Top 2-col grid */}
       <div className="overview-grid">
         {/* TODAY / THIS WEEK */}

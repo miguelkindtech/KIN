@@ -1,15 +1,6 @@
 export default function SetupPage() {
   return (
     <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title">setup</div>
-          <div className="page-subtitle">
-            Final Supabase and deployment checklist for KIN.
-          </div>
-        </div>
-      </div>
-
       <div className="section-stack">
         <div className="card">
           <div className="section-title">1. environment</div>

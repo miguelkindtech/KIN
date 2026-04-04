@@ -686,13 +686,7 @@ export default function VerticalsClient({ defaultId }: VerticalsClientProps) {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title">vertical solutions</div>
-          <div className="page-subtitle">
-            active product lines and proposed ideas.
-          </div>
-        </div>
+      <div className="page-actions">
         <button className="action-btn" onClick={() => createVertical(true)}>
           + propose vertical
         </button>

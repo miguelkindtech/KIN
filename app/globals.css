@@ -188,6 +188,7 @@ input, textarea, select { color: inherit; }
 
 .page { display: flex; flex-direction: column; gap: 20px; }
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.page-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .page-title { font-size: 24px; font-weight: 600; margin-bottom: 3px; line-height: 1.2; }
 .page-subtitle { font-size: 13px; color: var(--text2); max-width: 680px; line-height: 1.5; }
 
@@ -291,6 +292,7 @@ input, textarea, select { color: inherit; }
   gap: 12px;
   flex-wrap: wrap;
 }
+.calendar-period-title { font-size: 20px; font-weight: 600; line-height: 1.2; }
 .calendar-toolbar-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .calendar-mode-switch { display: inline-flex; align-items: center; gap: 6px; padding: 4px; border-radius: 999px; background: var(--bg2); border: 1px solid var(--border); }
 .calendar-mode-switch button { border: none; background: transparent; color: var(--text2); border-radius: 999px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
@@ -562,9 +564,10 @@ input, textarea, select { color: inherit; }
   .cards-grid, .note-grid, .search-grid { grid-template-columns: 1fr; }
   .talent-grid { grid-template-columns: 1fr !important; }
   .toolbar, .modal-actions, .calendar-toolbar, .calendar-toolbar-group, .calendar-detail-nav { width: 100%; }
+  .page-actions { width: 100%; }
   .toolbar > *, .calendar-toolbar-group > * { width: auto; }
   .modal-actions { flex-direction: column-reverse; }
-  .modal-actions button, .calendar-toolbar .action-btn, .calendar-toolbar .ghost-btn { width: 100%; justify-content: center; }
+  .modal-actions button, .calendar-toolbar .action-btn, .calendar-toolbar .ghost-btn, .page-actions .action-btn, .page-actions .ghost-btn { width: 100%; justify-content: center; }
   .calendar-month-header { display: none; }
   .calendar-month-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .calendar-month-cell { min-height: 112px; }
@@ -575,6 +578,7 @@ input, textarea, select { color: inherit; }
   .content { padding: 16px 12px 20px; }
   .page-title { font-size: 20px; }
   .page-subtitle { font-size: 12px; }
+  .calendar-period-title { font-size: 17px; }
   .card, .brief-card, .note-editor, .entity-card, .list-item, .row-item { padding: 14px; }
   .calendar-shell, .calendar-month-shell { gap: 12px; }
   .calendar-month-grid { grid-template-columns: 1fr; }

@@ -644,11 +644,7 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title">b2a</div>
-          <div className="page-subtitle">business-to-ai pipeline.</div>
-        </div>
+      <div className="page-actions">
         <button className="action-btn" onClick={() => createB2A(true)}>
           + propose b2a
         </button>

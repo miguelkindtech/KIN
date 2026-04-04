@@ -114,11 +114,7 @@ export default function CostsClient() {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title">costs</div>
-          <div className="page-subtitle">Operating cost control.</div>
-        </div>
+      <div className="page-actions">
         <button className="action-btn" onClick={openAdd}>+ add cost</button>
       </div>
 

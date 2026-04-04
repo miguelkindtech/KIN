@@ -934,8 +934,7 @@ export default function CalendarClient() {
     <div className="page">
       <div className="calendar-toolbar">
         <div>
-          <div className="page-title">calendar</div>
-          <div className="page-subtitle">
+          <div className="calendar-period-title">
             {viewMode === "month"
               ? formatMonthTitle(monthCursor)
               : `${detailBase.toLocaleDateString("en-GB", {

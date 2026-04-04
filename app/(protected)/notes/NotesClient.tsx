@@ -263,11 +263,7 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <div>
-          <div className="page-title">notes</div>
-          <div className="page-subtitle">ideas, strategy and reference thinking.</div>
-        </div>
+      <div className="page-actions">
         <button className="action-btn" onClick={() => setShowCreate(true)}>
           + new note
         </button>
