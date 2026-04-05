@@ -1,18 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  keywordRetrieve,
+  mergeRetrievedChunks,
+  type RetrievedChunk,
+} from "@/lib/rag/retrieval";
 import { createClient } from "@/lib/supabase/server";
 import { resolveSourceLabels } from "@/lib/rag/labels";
 
 export const runtime = "nodejs";
-
-type MatchChunk = {
-  id: string;
-  source_type: string;
-  source_id: string;
-  chunk_text: string;
-  similarity: number;
-};
 
 type HistoryMessage = {
   role: "user" | "assistant";
@@ -100,20 +97,25 @@ export async function POST(request: Request) {
       "match_embeddings",
       {
         query_embedding: queryEmbedding,
-        match_threshold: 0.65,
+        match_threshold: 0.45,
         match_count: 8,
       }
     );
 
+    const vectorChunks = Array.isArray(chunks)
+      ? (chunks as RetrievedChunk[])
+      : [];
+
     if (matchError) {
-      throw new Error(
-        `Vector search failed. Run lib/rag/schema.sql and /api/reindex first. ${matchError.message}`
-      );
+      console.warn("[kind-ai] vector search unavailable, falling back to keyword retrieval", matchError.message);
     }
 
-    const safeChunks = Array.isArray(chunks)
-      ? (chunks as MatchChunk[])
-      : [];
+    const keywordChunks = await keywordRetrieve(message, 8);
+    const safeChunks = mergeRetrievedChunks(
+      vectorChunks,
+      keywordChunks,
+      8
+    );
 
     const context = safeChunks
       .map((chunk) => String(chunk.chunk_text || "").trim())
