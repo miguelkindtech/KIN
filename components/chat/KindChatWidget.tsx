@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { uid } from "@/lib/utils/uid";
@@ -19,37 +20,16 @@ const SUGGESTIONS = [
   "What's happening this week?",
 ];
 
-function KindAvatar({
-  thinking = false,
-  size = 20,
-}: {
-  thinking?: boolean;
-  size?: number;
-}) {
+function KindAvatar({ size = 20 }: { size?: number }) {
   return (
-    <svg
-      aria-hidden="true"
-      className={`kind-chat-avatar${thinking ? " thinking" : ""}`}
-      viewBox="0 0 40 40"
+    <Image
+      src="/kindAI.png"
+      alt="kind. AI"
       width={size}
       height={size}
-    >
-      <circle className="kind-chat-avatar-shell" cx="20" cy="20" r="18" />
-      <g className="kind-chat-avatar-dots">
-        <circle cx="14.2" cy="17.4" r="2.6" />
-        <circle cx="25.8" cy="17.4" r="2.6" />
-      </g>
-      <g className="kind-chat-avatar-crosses">
-        <g transform="translate(14.2 17.4)">
-          <line x1="-2.5" y1="-2.5" x2="2.5" y2="2.5" />
-          <line x1="-2.5" y1="2.5" x2="2.5" y2="-2.5" />
-        </g>
-        <g transform="translate(25.8 17.4)">
-          <line x1="-2.5" y1="-2.5" x2="2.5" y2="2.5" />
-          <line x1="-2.5" y1="2.5" x2="2.5" y2="-2.5" />
-        </g>
-      </g>
-    </svg>
+      className="kind-chat-avatar-image"
+      priority={size >= 32}
+    />
   );
 }
 
@@ -168,11 +148,13 @@ export default function KindChatWidget() {
       <button
         aria-expanded={isOpen}
         aria-label={isOpen ? "Close kind. AI" : "Open kind. AI"}
-        className="kind-chat-trigger"
+        className={`kind-chat-trigger${isOpen ? " open" : ""}`}
         onClick={() => setIsOpen((current) => !current)}
         type="button"
       >
-        <KindAvatar thinking={isOpen} size={20} />
+        <span className="kind-chat-trigger-logo">
+          <KindAvatar size={20} />
+        </span>
       </button>
 
       <div
@@ -195,7 +177,9 @@ export default function KindChatWidget() {
         <div className="kind-chat-messages" ref={scrollRef}>
           {messages.length === 0 ? (
             <div className="kind-chat-empty">
-              <KindAvatar size={40} />
+              <div className="kind-chat-empty-logo">
+                <KindAvatar size={40} />
+              </div>
               <p>Ask me anything about Kind Tech.</p>
               <div className="kind-chat-suggestions">
                 {SUGGESTIONS.map((suggestion) => (
