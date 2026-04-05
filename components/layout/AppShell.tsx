@@ -7,6 +7,7 @@ import Header from "@/components/layout/Header";
 import Modal from "@/components/ui/Modal";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtime } from "@/lib/hooks/useRealtime";
+import { queueRagIndexSync } from "@/lib/rag/client";
 import { formatDate } from "@/lib/utils/dates";
 import { uid } from "@/lib/utils/uid";
 import type { CaptureContext, Profile } from "@/lib/types";
@@ -180,7 +181,7 @@ export default function AppShell({ children, profile }: AppShellProps) {
         const date = formatDate(new Date());
         const { data: existing } = await supabase
           .from("day_notes")
-          .select("id,todos")
+          .select("*")
           .eq("date", date)
           .maybeSingle();
 
@@ -188,22 +189,36 @@ export default function AppShell({ children, profile }: AppShellProps) {
         const nextTodos = [...todos, { id: uid(), text, done: false }];
 
         if (existing?.id) {
-          await supabase
+          const { data: updated } = await supabase
             .from("day_notes")
             .update({ todos: nextTodos, updated_at: new Date().toISOString() })
-            .eq("id", existing.id);
+            .eq("id", existing.id)
+            .select("*")
+            .single();
+
+          if (updated) {
+            queueRagIndexSync("day_notes", [updated]);
+          }
         } else {
-          await supabase.from("day_notes").insert({
-            date,
-            content: "",
-            todos: nextTodos,
-          });
+          const { data: inserted } = await supabase
+            .from("day_notes")
+            .insert({
+              date,
+              content: "",
+              todos: nextTodos,
+            })
+            .select("*")
+            .single();
+
+          if (inserted) {
+            queueRagIndexSync("day_notes", [inserted]);
+          }
         }
       } else if (captureContext.startsWith("vertical:")) {
         const id = captureContext.replace("vertical:", "");
         const { data: vertical } = await supabase
           .from("verticals")
-          .select("id,notes_list")
+          .select("*")
           .eq("id", id)
           .single();
 
@@ -211,7 +226,7 @@ export default function AppShell({ children, profile }: AppShellProps) {
           ? vertical.notes_list
           : [];
 
-        await supabase
+        const { data: updated } = await supabase
           .from("verticals")
           .update({
             notes_list: [
@@ -220,12 +235,18 @@ export default function AppShell({ children, profile }: AppShellProps) {
             ],
             updated_at: new Date().toISOString(),
           })
-          .eq("id", id);
+          .eq("id", id)
+          .select("*")
+          .single();
+
+        if (updated) {
+          queueRagIndexSync("verticals", [updated]);
+        }
       } else if (captureContext.startsWith("b2a:")) {
         const id = captureContext.replace("b2a:", "");
         const { data: item } = await supabase
           .from("b2a")
-          .select("id,notes_list")
+          .select("*")
           .eq("id", id)
           .single();
 
@@ -233,7 +254,7 @@ export default function AppShell({ children, profile }: AppShellProps) {
           ? item.notes_list
           : [];
 
-        await supabase
+        const { data: updated } = await supabase
           .from("b2a")
           .update({
             notes_list: [
@@ -242,7 +263,13 @@ export default function AppShell({ children, profile }: AppShellProps) {
             ],
             updated_at: new Date().toISOString(),
           })
-          .eq("id", id);
+          .eq("id", id)
+          .select("*")
+          .single();
+
+        if (updated) {
+          queueRagIndexSync("b2a", [updated]);
+        }
       }
 
       closeCapture();
