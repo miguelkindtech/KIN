@@ -2,7 +2,15 @@ import { Block, Note, Cost } from "./types";
 import { EVENT_TYPES, MONTHS_PT, NOTE_COLORS } from "./constants";
 
 export function uid(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  if (typeof globalThis.crypto !== "undefined" && "randomUUID" in globalThis.crypto) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const rand = Math.floor(Math.random() * 16);
+    const value = char === "x" ? rand : (rand & 0x3) | 0x8;
+    return value.toString(16);
+  });
 }
 
 export function formatDate(d: Date): string {

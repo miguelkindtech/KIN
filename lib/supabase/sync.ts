@@ -13,7 +13,7 @@ export async function syncTableById<T extends { id: string }>(
     .select("id");
 
   if (selectError) {
-    throw selectError;
+    throw new Error(`[${table}] select failed: ${selectError.message}`);
   }
 
   const currentIds = rows.map((row) => row.id);
@@ -23,10 +23,10 @@ export async function syncTableById<T extends { id: string }>(
   if (rows.length > 0) {
     const { error: upsertError } = await supabase
       .from(table)
-      .upsert(rows.map(toRow));
+      .upsert(rows.map(toRow), { onConflict: "id" });
 
     if (upsertError) {
-      throw upsertError;
+      throw new Error(`[${table}] upsert failed: ${upsertError.message}`);
     }
   }
 
@@ -37,7 +37,7 @@ export async function syncTableById<T extends { id: string }>(
       .in("id", deletedIds);
 
     if (deleteError) {
-      throw deleteError;
+      throw new Error(`[${table}] delete failed: ${deleteError.message}`);
     }
   }
 }
