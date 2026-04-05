@@ -14,6 +14,8 @@ type ChatMessage = {
   sources?: string[];
 };
 
+const CHAT_STORAGE_KEY = "kind-ai-chat-history";
+
 const SUGGESTIONS = [
   "What's the state of Compy?",
   "Any open B2A?",
@@ -53,6 +55,69 @@ export default function KindChatWidget() {
 
   const shouldHide =
     pathname.startsWith("/login") || pathname.startsWith("/auth");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const raw = window.localStorage.getItem(CHAT_STORAGE_KEY);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+
+      const hydratedMessages = parsed
+        .map((item) => {
+          if (!item || typeof item !== "object") return null;
+
+          const id =
+            typeof item.id === "string" && item.id.trim() ? item.id : uid();
+          const role =
+            item.role === "assistant" || item.role === "user"
+              ? item.role
+              : null;
+          const content =
+            typeof item.content === "string" ? item.content.trim() : "";
+          const sources = Array.isArray(item.sources)
+            ? item.sources.filter(
+                (source: unknown): source is string =>
+                  typeof source === "string" && source.trim().length > 0
+              )
+            : [];
+
+          if (!role || !content) return null;
+
+          return {
+            id,
+            role,
+            content,
+            sources,
+          } satisfies ChatMessage;
+        })
+        .reduce<ChatMessage[]>((accumulator, item) => {
+          if (item) accumulator.push(item);
+          return accumulator;
+        }, [])
+        .slice(-50);
+
+      setMessages(hydratedMessages);
+    } catch (error) {
+      console.error("Failed to restore kind. AI chat history", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      window.localStorage.setItem(
+        CHAT_STORAGE_KEY,
+        JSON.stringify(messages.slice(-50))
+      );
+    } catch (error) {
+      console.error("Failed to persist kind. AI chat history", error);
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
