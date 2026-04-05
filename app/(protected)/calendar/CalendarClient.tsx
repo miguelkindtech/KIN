@@ -14,7 +14,7 @@ import {
 } from "@/lib/utils";
 import { EVENT_TYPES, WEEKDAYS } from "@/lib/constants";
 import { useAutoSave } from "@/hooks/useAutoSave";
-import type { CalendarEvent, DayFollowUpItem, DocItem } from "@/lib/types";
+import type { CalendarEvent, DocItem } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { syncTableById } from "@/lib/supabase/sync";
 import { uploadAttachment } from "@/lib/supabase/storage";
@@ -74,11 +74,6 @@ function sortEvents(a: CalendarEvent, b: CalendarEvent) {
   return (a.time || "").localeCompare(b.time || "");
 }
 
-function eventTimeLabel(event: CalendarEvent) {
-  if (event.allDay) return "all day";
-  return `${event.time} · ${event.duration} min`;
-}
-
 function attachmentKind(attachment: DocItem) {
   if (attachment.type.includes("pdf")) return "pdf";
   if (attachment.type.includes("image")) return "image";
@@ -128,12 +123,6 @@ export default function CalendarClient() {
     notes,
     verticals,
     b2a,
-    dayNotes,
-    setDayNotes,
-    dayFollowUps,
-    setDayFollowUps,
-    dayDecisions,
-    setDayDecisions,
   } = useApp();
   const supabase = useMemo(() => createClient(), []);
 
@@ -164,7 +153,6 @@ export default function CalendarClient() {
     duration: "60",
     notes: "",
   });
-  const [followUpInput, setFollowUpInput] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [uploadingAttachmentFor, setUploadingAttachmentFor] = useState<
     string | null
@@ -203,31 +191,6 @@ export default function CalendarClient() {
     300
   );
 
-  useAutoSave(
-    { dayNotes, dayFollowUps },
-    async (currentState) => {
-      const dates = Array.from(
-        new Set([
-          ...Object.keys(currentState.dayNotes),
-          ...Object.keys(currentState.dayFollowUps),
-        ])
-      ).filter(Boolean);
-
-      if (dates.length === 0) return;
-
-      await supabase.from("day_notes").upsert(
-        dates.map((date) => ({
-          date,
-          content: currentState.dayNotes[date] || "",
-          todos: currentState.dayFollowUps[date] || [],
-          updated_at: new Date().toISOString(),
-        })),
-        { onConflict: "date" }
-      );
-    },
-    300
-  );
-
   const eventsByDate = useMemo(() => {
     const byDate: Record<string, CalendarEvent[]> = {};
     events
@@ -241,12 +204,6 @@ export default function CalendarClient() {
   }, [events]);
 
   const selectedDayEvents = eventsByDate[selectedDate] || [];
-  const followUpsForDay = dayFollowUps[selectedDate] || [];
-  const selectedSlotEvent = selectedSlot
-    ? selectedDayEvents.find(
-        (event) => !event.allDay && event.time === selectedSlot.slot
-      )
-    : null;
 
   const detailBase = startOfWeek(parseDateValue(selectedDate));
   const weekDays = Array.from({ length: 7 }, (_, index) =>
@@ -261,15 +218,6 @@ export default function CalendarClient() {
   const monthCells = Array.from({ length: 42 }, (_, index) =>
     addDays(monthGridStart, index)
   );
-
-  const upcomingEvents = useMemo(() => {
-    const start = selectedDate;
-    const end = formatDate(addDays(parseDateValue(selectedDate), 7));
-    return events
-      .filter((event) => event.date >= start && event.date <= end)
-      .sort(sortEvents)
-      .slice(0, 8);
-  }, [events, selectedDate]);
 
   function selectDate(next: Date | string) {
     const nextDate = typeof next === "string" ? parseDateValue(next) : next;
@@ -373,43 +321,6 @@ export default function CalendarClient() {
     );
   }
 
-  function setDayNote(date: string, text: string) {
-    setDayNotes((previous) => ({ ...previous, [date]: text }));
-  }
-
-  function setDayDecision(date: string, text: string) {
-    setDayDecisions((previous) => ({ ...previous, [date]: text }));
-  }
-
-  function addFollowUp(date: string, text: string) {
-    if (!text.trim()) return;
-    const item: DayFollowUpItem = {
-      id: uid(),
-      text: text.trim(),
-      done: false,
-    };
-    setDayFollowUps((previous) => ({
-      ...previous,
-      [date]: [...(previous[date] || []), item],
-    }));
-  }
-
-  function toggleFollowUp(date: string, itemId: string) {
-    setDayFollowUps((previous) => ({
-      ...previous,
-      [date]: (previous[date] || []).map((item) =>
-        item.id === itemId ? { ...item, done: !item.done } : item
-      ),
-    }));
-  }
-
-  function deleteFollowUp(date: string, itemId: string) {
-    setDayFollowUps((previous) => ({
-      ...previous,
-      [date]: (previous[date] || []).filter((item) => item.id !== itemId),
-    }));
-  }
-
   function handleSlotMouseDown(date: string, slotIdx: number, event: MouseEvent) {
     event.preventDefault();
     dragRef.current = { date, startIdx: slotIdx, currentIdx: slotIdx };
@@ -449,58 +360,9 @@ export default function CalendarClient() {
     return <div className="loading">Loading calendar...</div>;
   }
 
-  function renderDayPanel(showSlotCard: boolean) {
+  function renderDayPanel() {
     return (
       <div className="calendar-panel-stack">
-        {showSlotCard ? (
-          <div className="card calendar-side-section">
-            <div className="detail-label" style={{ marginBottom: 6 }}>
-              {formatLongDate(selectedDate)}
-            </div>
-
-            {selectedSlot ? (
-              selectedSlotEvent ? (
-                <div>
-                  <div className="calendar-day-event-title">
-                    {selectedSlotEvent.title}
-                  </div>
-                  <div className="calendar-day-event-meta">
-                    {eventTimeLabel(selectedSlotEvent)} · {selectedSlotEvent.type}
-                  </div>
-                  <button
-                    className="ghost-btn small-btn"
-                    style={{ marginTop: 10 }}
-                    onClick={() => setDetailId(selectedSlotEvent.id)}
-                  >
-                    open event
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-                    {selectedSlot.slot} — empty slot
-                  </div>
-                  <button
-                    className="action-btn small-btn"
-                    onClick={() =>
-                      openCreateForDate(selectedDate, {
-                        time: selectedSlot.slot,
-                        allDay: false,
-                      })
-                    }
-                  >
-                    + add event here
-                  </button>
-                </div>
-              )
-            ) : (
-              <div className="muted" style={{ fontSize: 12 }}>
-                tap a slot to inspect or create.
-              </div>
-            )}
-          </div>
-        ) : null}
-
         <div className="card calendar-side-section calendar-day-card">
           <div className="section-header">
             <div>
@@ -550,122 +412,6 @@ export default function CalendarClient() {
                   </div>
                 );
               })}
-            </div>
-          )}
-        </div>
-
-        <div className="card calendar-side-section">
-          <div className="detail-label" style={{ marginBottom: 6 }}>
-            notes for the day
-          </div>
-          <textarea
-            className="notes-area"
-            rows={3}
-            value={dayNotes[selectedDate] || ""}
-            placeholder="capture thoughts for this day..."
-            onChange={(event) => setDayNote(selectedDate, event.target.value)}
-          />
-        </div>
-
-        <div className="card calendar-side-section">
-          <div className="detail-label" style={{ marginBottom: 6 }}>
-            decisions
-          </div>
-          <textarea
-            className="notes-area"
-            rows={3}
-            value={dayDecisions[selectedDate] || ""}
-            placeholder="decisions made today..."
-            onChange={(event) => setDayDecision(selectedDate, event.target.value)}
-          />
-        </div>
-
-        <div className="card calendar-side-section">
-          <div className="detail-label" style={{ marginBottom: 8 }}>
-            follow-ups
-          </div>
-          <div className="list-stack">
-            {followUpsForDay.map((item) => (
-              <div key={item.id} className="list-item">
-                <button
-                  className={`todo-check${item.done ? " done" : ""}`}
-                  onClick={() => toggleFollowUp(selectedDate, item.id)}
-                  style={{ flexShrink: 0 }}
-                  aria-label={item.done ? "uncheck" : "check"}
-                >
-                  {item.done ? "✓" : ""}
-                </button>
-                <span
-                  className="list-item-main"
-                  style={{
-                    fontSize: 13,
-                    textDecoration: item.done ? "line-through" : "none",
-                    opacity: item.done ? 0.5 : 1,
-                  }}
-                >
-                  {item.text}
-                </span>
-                <button
-                  className="item-delete"
-                  onClick={() => deleteFollowUp(selectedDate, item.id)}
-                  title="remove"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-            <input
-              className="modal-input"
-              style={{ flex: 1, fontSize: 12 }}
-              value={followUpInput}
-              placeholder="add follow-up..."
-              onChange={(event) => setFollowUpInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  addFollowUp(selectedDate, followUpInput);
-                  setFollowUpInput("");
-                }
-              }}
-            />
-            <button
-              className="ghost-btn small-btn"
-              onClick={() => {
-                addFollowUp(selectedDate, followUpInput);
-                setFollowUpInput("");
-              }}
-            >
-              +
-            </button>
-          </div>
-        </div>
-
-        <div className="card calendar-side-section">
-          <div className="detail-label" style={{ marginBottom: 8 }}>
-            next 7 days
-          </div>
-          {upcomingEvents.length === 0 ? (
-            <div className="calendar-empty">Nothing scheduled yet.</div>
-          ) : (
-            <div className="calendar-day-list">
-              {upcomingEvents.map((event) => (
-                <div className="calendar-day-event" key={event.id}>
-                  <div className="calendar-day-event-main">
-                    <div className="calendar-day-event-title">{event.title}</div>
-                    <div className="calendar-day-event-meta">
-                      {formatLongDate(event.date)}
-                    </div>
-                  </div>
-                  <div className="calendar-day-event-actions">
-                    {event.allDay ? (
-                      <span className="calendar-all-day">all day</span>
-                    ) : (
-                      <span className="pill">{event.time}</span>
-                    )}
-                  </div>
-                </div>
-              ))}
             </div>
           )}
         </div>
@@ -1088,7 +834,7 @@ export default function CalendarClient() {
             </div>
           </div>
 
-          {renderDayPanel(false)}
+          {renderDayPanel()}
         </div>
       ) : (
         <div className="calendar-shell">
@@ -1186,7 +932,7 @@ export default function CalendarClient() {
             </div>
           </div>
 
-          {renderDayPanel(true)}
+          {renderDayPanel()}
         </div>
       )}
 
