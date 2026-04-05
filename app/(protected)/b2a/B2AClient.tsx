@@ -9,6 +9,7 @@ import { B2AItem, CalendarEvent, InlineNote } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { syncTableById } from "@/lib/supabase/sync";
 import ConfirmModal from "@/components/ui/ConfirmModal";
+import RichDocEditor from "@/components/ui/RichDocEditor";
 
 function sortMeetings(a: CalendarEvent, b: CalendarEvent) {
   if (a.date !== b.date) return a.date.localeCompare(b.date);
@@ -27,6 +28,16 @@ function formatMeetingLabel(event: CalendarEvent) {
   return `${day} · ${event.time} · ${event.duration} min`;
 }
 
+function toDocHtml(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "<p></p>";
+  if (/<[a-z][\s\S]*>/i.test(trimmed)) return value;
+  return trimmed
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p>${paragraph.replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
 function AppliedCard({
   item,
   meetingCount,
@@ -43,13 +54,7 @@ function AppliedCard({
       <div className="entity-header">
         <div className="entity-title">{item.company || "untitled company"}</div>
       </div>
-      {item.summary ? (
-        <div className="entity-subtitle">{item.summary}</div>
-      ) : (
-        <div className="entity-subtitle">
-          no applied strategy defined yet.
-        </div>
-      )}
+      <div className="entity-subtitle">open workspace</div>
       <div className="entity-meta" style={{ marginTop: 10 }}>
         {meetingCount} meeting{meetingCount === 1 ? "" : "s"} · {solutionCount}{" "}
         solution{solutionCount === 1 ? "" : "s"}
@@ -70,6 +75,10 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
   const [selectedId, setSelectedId] = useState<string | null>(defaultId ?? null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmDeleteSolutionId, setConfirmDeleteSolutionId] = useState<string | null>(null);
+  const [docView, setDocView] = useState<
+    | null
+    | { type: "operation" | "strategy" | "solution"; solutionId?: string }
+  >(null);
 
   useAutoSave(
     b2a,
@@ -244,6 +253,7 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
           : item
       )
     );
+    setDocView(null);
     setConfirmDeleteSolutionId(null);
   }
 
@@ -259,6 +269,64 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
       .filter((event) => event.linkedB2AId === item.id)
       .slice()
       .sort(sortMeetings);
+
+    if (docView !== null) {
+      if (docView.type === "operation") {
+        return (
+          <RichDocEditor
+            title="Operation Notes"
+            value={toDocHtml(item.notes)}
+            placeholder="Write about how this company operates..."
+            backLabel="back to company"
+            onChange={(value) => updateItem(item.id, { notes: value })}
+            onBack={() => setDocView(null)}
+          />
+        );
+      }
+
+      if (docView.type === "strategy") {
+        return (
+          <RichDocEditor
+            title="Applied Strategy"
+            value={toDocHtml(item.summary)}
+            placeholder="Shape the strategy for this applied company..."
+            backLabel="back to company"
+            onChange={(value) => updateItem(item.id, { summary: value })}
+            onBack={() => setDocView(null)}
+          />
+        );
+      }
+
+      const solution = (item.notesList || []).find(
+        (entry) => entry.id === docView.solutionId
+      );
+
+      if (!solution) {
+        setDocView(null);
+        return null;
+      }
+
+      return (
+        <RichDocEditor
+          title={solution.title}
+          titlePlaceholder="Solution name"
+          value={toDocHtml(solution.body || solution.content || "")}
+          placeholder="Develop the solution here..."
+          backLabel="back to company"
+          onTitleChange={(value) =>
+            updateSolution(item.id, solution.id, { title: value })
+          }
+          onChange={(value) =>
+            updateSolution(item.id, solution.id, {
+              body: value,
+              content: value,
+            })
+          }
+          onBack={() => setDocView(null)}
+          onDelete={() => setConfirmDeleteSolutionId(solution.id)}
+        />
+      );
+    }
 
     return (
       <div className="page">
@@ -297,29 +365,44 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
           </div>
 
           <div className="detail-section">
-            <div className="detail-label">operation notes</div>
-            <textarea
-              className="notes-area"
-              rows={6}
-              value={item.notes}
-              placeholder="write notes about how this company operates, constraints, timing, stakeholders and what matters commercially."
-              onChange={(event) =>
-                updateItem(item.id, { notes: event.target.value })
-              }
-            />
+            <div className="section-header">
+              <div>
+                <div className="section-title">operation notes</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  open a full writing document
+                </div>
+              </div>
+            </div>
+            <button
+              className="entity-card doc-launch-card"
+              onClick={() => setDocView({ type: "operation" })}
+            >
+              <div className="entity-title">Operation Notes</div>
+              <div className="entity-subtitle">
+                open the document for operational thinking, constraints and
+                company context
+              </div>
+            </button>
           </div>
 
           <div className="detail-section">
-            <div className="detail-label">applied strategy</div>
-            <textarea
-              className="notes-area"
-              rows={5}
-              value={item.summary}
-              placeholder="what is the strategy for this applied engagement?"
-              onChange={(event) =>
-                updateItem(item.id, { summary: event.target.value })
-              }
-            />
+            <div className="section-header">
+              <div>
+                <div className="section-title">applied strategy</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  strategy lives in its own doc
+                </div>
+              </div>
+            </div>
+            <button
+              className="entity-card doc-launch-card"
+              onClick={() => setDocView({ type: "strategy" })}
+            >
+              <div className="entity-title">Applied Strategy</div>
+              <div className="entity-subtitle">
+                open the document for positioning, scope and approach
+              </div>
+            </button>
           </div>
 
           <div className="detail-section">
@@ -461,42 +544,37 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
             {(item.notesList || []).length === 0 ? (
               <div className="empty-state">no applied solutions defined yet.</div>
             ) : (
-              <div className="section-stack">
+              <div className="cards-grid">
                 {(item.notesList || []).map((solution) => (
-                  <div key={solution.id} className="detail-note list-item">
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                      <input
-                        className="modal-input"
-                        style={{ flex: 1, fontWeight: 600 }}
-                        value={solution.title}
-                        placeholder="solution name"
-                        onChange={(event) =>
-                          updateSolution(item.id, solution.id, {
-                            title: event.target.value,
+                  <div key={solution.id} className="entity-card doc-launch-card">
+                    <div className="entity-title">
+                      {solution.title || "Untitled solution"}
+                    </div>
+                    <div className="entity-subtitle">
+                      open this solution document to develop scope, ideas and
+                      implementation notes
+                    </div>
+                    <div className="doc-launch-actions">
+                      <button
+                        className="ghost-btn small-btn"
+                        onClick={() =>
+                          setDocView({
+                            type: "solution",
+                            solutionId: solution.id,
                           })
                         }
-                      />
-                      <button
-                        className="item-delete"
-                        onClick={() => setConfirmDeleteSolutionId(solution.id)}
-                        title="delete solution"
+                        type="button"
                       >
-                        ×
+                        open doc
+                      </button>
+                      <button
+                        className="danger-btn small-btn"
+                        onClick={() => setConfirmDeleteSolutionId(solution.id)}
+                        type="button"
+                      >
+                        delete
                       </button>
                     </div>
-
-                    <textarea
-                      className="notes-area"
-                      rows={5}
-                      value={solution.body || solution.content || ""}
-                      placeholder="develop the solution, write hypotheses, scope, implementation ideas and anything operational here."
-                      onChange={(event) =>
-                        updateSolution(item.id, solution.id, {
-                          body: event.target.value,
-                          content: event.target.value,
-                        })
-                      }
-                    />
                   </div>
                 ))}
               </div>

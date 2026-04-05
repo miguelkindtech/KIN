@@ -582,6 +582,90 @@ input, textarea, select { color: inherit; }
 .detail-contact:last-child { border-bottom: none; }
 .detail-note { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .detail-note:last-child { border-bottom: none; }
+.doc-launch-card {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+.doc-launch-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.rich-doc-shell { max-width: 980px; }
+.rich-doc-card {
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: 0 12px 30px var(--shadow);
+}
+.rich-doc-head { padding: 24px 24px 0; }
+.rich-doc-title-static,
+.rich-doc-title-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text1);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+.rich-doc-title-static { padding-bottom: 6px; }
+.rich-doc-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 18px;
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+}
+.rich-doc-swatches { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
+.rich-doc-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.rich-doc-delete { margin-left: auto; }
+.rich-doc-editor {
+  min-height: 64vh;
+  padding: 28px 24px 34px;
+  outline: none;
+  font-size: 15px;
+  line-height: 1.85;
+  color: var(--text1);
+}
+.rich-doc-editor.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--text3);
+}
+.rich-doc-editor h1,
+.rich-doc-editor h2,
+.rich-doc-editor h3,
+.rich-doc-editor p {
+  margin: 0 0 14px;
+}
+.rich-doc-editor h1 { font-size: 34px; line-height: 1.1; }
+.rich-doc-editor h2 { font-size: 26px; line-height: 1.2; }
+.rich-doc-editor h3 { font-size: 20px; line-height: 1.3; }
+.rich-doc-editor ul,
+.rich-doc-editor ol { padding-left: 22px; margin: 0 0 14px; }
+.rich-doc-editor blockquote {
+  margin: 0 0 14px;
+  padding-left: 14px;
+  border-left: 3px solid var(--border);
+  color: var(--text2);
+}
 
 .note-editor-shell { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
 .note-editor { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); box-shadow: 0 6px 18px var(--shadow); padding: 18px; }
@@ -755,6 +839,7 @@ input, textarea, select { color: inherit; }
   .notes-folder-create { width: 100%; }
   .notes-folder-input { width: 100%; }
   .notes-desktop-header, .notes-strategic-header { flex-direction: column; align-items: flex-start; }
+  .rich-doc-toolbar { padding: 10px 12px; }
   .talent-grid { grid-template-columns: 1fr !important; }
   .toolbar, .modal-actions, .calendar-toolbar, .calendar-toolbar-group, .calendar-detail-nav { width: 100%; }
   .page-actions { width: 100%; }
@@ -779,6 +864,10 @@ input, textarea, select { color: inherit; }
   .notes-workspace-page { min-height: auto; gap: 22px; }
   .notes-desktop { min-height: 360px; }
   .notes-strategic-mark { width: 170px; }
+  .rich-doc-head { padding: 20px 16px 0; }
+  .rich-doc-title-static,
+  .rich-doc-title-input { font-size: 24px; }
+  .rich-doc-editor { min-height: 56vh; padding: 22px 16px 28px; }
   .week-grid-days { min-width: 700px; }
   .week-grid-wrap { overflow: auto; }
   .detail-page { max-width: 100%; }
