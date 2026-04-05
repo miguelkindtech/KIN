@@ -3,55 +3,73 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/providers/AppContext";
-import { uid } from "@/lib/utils";
-import { B2A_STATUSES } from "@/lib/constants";
+import { addMinutes, formatDate, uid } from "@/lib/utils";
 import { useAutoSave } from "@/hooks/useAutoSave";
-import { B2AItem, Front, NextStep, Contact, InlineNote, DocItem } from "@/lib/types";
+import { B2AItem, CalendarEvent, InlineNote } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { syncTableById } from "@/lib/supabase/sync";
-import { uploadAttachment } from "@/lib/supabase/storage";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 
-// ---------------------------------------------------------------------------
-// B2A entity card
-// ---------------------------------------------------------------------------
+function sortMeetings(a: CalendarEvent, b: CalendarEvent) {
+  if (a.date !== b.date) return a.date.localeCompare(b.date);
+  if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+  return (a.time || "").localeCompare(b.time || "");
+}
 
-function B2ACard({
+function formatMeetingLabel(event: CalendarEvent) {
+  const day = new Date(`${event.date}T00:00:00`).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+  if (event.allDay) return `${day} · all day`;
+  return `${day} · ${event.time} · ${event.duration} min`;
+}
+
+function AppliedCard({
   item,
+  meetingCount,
+  solutionCount,
   onSelect,
 }: {
   item: B2AItem;
+  meetingCount: number;
+  solutionCount: number;
   onSelect: (id: string) => void;
 }) {
   return (
     <div className="entity-card" onClick={() => onSelect(item.id)}>
-      {item.proposed && <span className="proposed-badge">proposed</span>}
       <div className="entity-header">
-        <div className="entity-title">{item.company || "untitled"}</div>
-        {!item.proposed && <span className="badge">{item.status}</span>}
+        <div className="entity-title">{item.company || "untitled company"}</div>
       </div>
-      {item.summary && <div className="entity-subtitle">{item.summary}</div>}
+      {item.summary ? (
+        <div className="entity-subtitle">{item.summary}</div>
+      ) : (
+        <div className="entity-subtitle">
+          no applied strategy defined yet.
+        </div>
+      )}
+      <div className="entity-meta" style={{ marginTop: 10 }}>
+        {meetingCount} meeting{meetingCount === 1 ? "" : "s"} · {solutionCount}{" "}
+        solution{solutionCount === 1 ? "" : "s"}
+      </div>
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// B2AClient
-// ---------------------------------------------------------------------------
 
 interface B2AClientProps {
   defaultId?: string;
 }
 
 export default function B2AClient({ defaultId }: B2AClientProps) {
-  const { loaded, b2a, setB2A, team } = useApp();
+  const { loaded, b2a, setB2A, events, setEvents } = useApp();
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
 
   const [selectedId, setSelectedId] = useState<string | null>(defaultId ?? null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [confirmDeleteNoteId, setConfirmDeleteNoteId] = useState<string | null>(null);
-  const [uploadingDocsFor, setUploadingDocsFor] = useState<string | null>(null);
+  const [confirmDeleteSolutionId, setConfirmDeleteSolutionId] = useState<string | null>(null);
 
   useAutoSave(
     b2a,
@@ -68,7 +86,7 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
         contacts: item.contacts,
         docs: item.docs,
         notes: item.notes,
-        proposed: item.proposed,
+        proposed: false,
         notes_list: (item.notesList || []).map((note) => ({
           id: note.id,
           title: note.title,
@@ -80,23 +98,41 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
     300
   );
 
+  useAutoSave(
+    events,
+    async (currentEvents) => {
+      await syncTableById(supabase, "events", currentEvents, (event) => ({
+        id: event.id,
+        title: event.title,
+        date: event.date,
+        start_time: event.allDay ? null : event.time,
+        end_time: event.allDay ? null : addMinutes(event.time, event.duration || 60),
+        description: event.notes || "",
+        linked_to: event.linkedVerticalId
+          ? `vertical:${event.linkedVerticalId}`
+          : event.linkedB2AId
+          ? `b2a:${event.linkedB2AId}`
+          : null,
+        attachments: event.attachments || [],
+        updated_at: new Date().toISOString(),
+      }));
+    },
+    300
+  );
+
   if (!loaded) {
     return <div className="loading">Loading Applied...</div>;
   }
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
   function updateItem(id: string, patch: Partial<B2AItem>) {
-    setB2A((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    setB2A((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }
 
-  function createB2A(proposed: boolean) {
+  function createApplied() {
     const item: B2AItem = {
       id: uid(),
-      company: proposed ? "New Idea" : "New Company",
-      status: "lead",
+      company: "New company",
+      status: "active",
       ownerId: "",
       summary: "",
       challenge: "",
@@ -105,189 +141,124 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
       contacts: [],
       docs: [],
       notes: "",
-      proposed,
+      proposed: false,
       notesList: [],
     };
+
     setB2A((prev) => [...prev, item]);
     setSelectedId(item.id);
     router.push(`/b2a/${item.id}`);
   }
 
   function deleteItem(id: string) {
-    setB2A((prev) => prev.filter((b) => b.id !== id));
+    setB2A((prev) => prev.filter((item) => item.id !== id));
+    setEvents((prev) => prev.filter((event) => event.linkedB2AId !== id));
     setConfirmDeleteId(null);
     setSelectedId(null);
     router.push("/b2a");
   }
 
-  // Fronts
-  function addFront(id: string) {
-    const front: Front = { id: uid(), text: "" };
-    setB2A((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, fronts: [...b.fronts, front] } : b))
+  function addMeeting(itemId: string) {
+    const today = formatDate(new Date());
+    const meeting: CalendarEvent = {
+      id: uid(),
+      title: "New meeting",
+      date: today,
+      time: "10:00",
+      allDay: false,
+      type: "b2a",
+      duration: 60,
+      notes: "",
+      attachments: [],
+      linkedNoteId: "",
+      linkedVerticalId: "",
+      linkedB2AId: itemId,
+    };
+
+    setEvents((prev) => [...prev, meeting]);
+  }
+
+  function updateMeeting(eventId: string, patch: Partial<CalendarEvent>) {
+    setEvents((prev) =>
+      prev.map((event) => (event.id === eventId ? { ...event, ...patch } : event))
     );
   }
 
-  function updateFront(itemId: string, frontId: string, text: string) {
-    setB2A((prev) =>
-      prev.map((b) =>
-        b.id === itemId
-          ? { ...b, fronts: b.fronts.map((f) => (f.id === frontId ? { ...f, text } : f)) }
-          : b
-      )
-    );
+  function deleteMeeting(eventId: string) {
+    setEvents((prev) => prev.filter((event) => event.id !== eventId));
   }
 
-  function removeFront(itemId: string, frontId: string) {
-    setB2A((prev) =>
-      prev.map((b) =>
-        b.id === itemId ? { ...b, fronts: b.fronts.filter((f) => f.id !== frontId) } : b
-      )
-    );
-  }
+  function addSolution(itemId: string) {
+    const solution: InlineNote = {
+      id: uid(),
+      title: "",
+      content: "",
+      body: "",
+    };
 
-  // Next Steps
-  function addStep(id: string) {
-    const step: NextStep = { id: uid(), text: "", done: false };
-    setB2A((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, nextSteps: [...b.nextSteps, step] } : b))
-    );
-  }
-
-  function updateStep(itemId: string, stepId: string, patch: Partial<NextStep>) {
-    setB2A((prev) =>
-      prev.map((b) =>
-        b.id === itemId
-          ? {
-              ...b,
-              nextSteps: b.nextSteps.map((s) =>
-                s.id === stepId ? { ...s, ...patch } : s
-              ),
-            }
-          : b
-      )
-    );
-  }
-
-  function removeStep(itemId: string, stepId: string) {
-    setB2A((prev) =>
-      prev.map((b) =>
-        b.id === itemId
-          ? { ...b, nextSteps: b.nextSteps.filter((s) => s.id !== stepId) }
-          : b
-      )
-    );
-  }
-
-  // Contacts
-  function addContact(id: string) {
-    const contact: Contact = { id: uid(), name: "", role: "", email: "" };
-    setB2A((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, contacts: [...b.contacts, contact] } : b))
-    );
-  }
-
-  function updateContact(itemId: string, contactId: string, patch: Partial<Contact>) {
-    setB2A((prev) =>
-      prev.map((b) =>
-        b.id === itemId
-          ? {
-              ...b,
-              contacts: b.contacts.map((c) =>
-                c.id === contactId ? { ...c, ...patch } : c
-              ),
-            }
-          : b
-      )
-    );
-  }
-
-  function removeContact(itemId: string, contactId: string) {
-    setB2A((prev) =>
-      prev.map((b) =>
-        b.id === itemId
-          ? { ...b, contacts: b.contacts.filter((c) => c.id !== contactId) }
-          : b
-      )
-    );
-  }
-
-  async function addDoc(itemId: string, file: File) {
-    setUploadingDocsFor(itemId);
-    try {
-      const doc = await uploadAttachment(supabase, file, "b2a", itemId);
-      setB2A((prev) =>
-        prev.map((item) =>
-          item.id === itemId ? { ...item, docs: [...item.docs, doc] } : item
-        )
-      );
-    } finally {
-      setUploadingDocsFor(null);
-    }
-  }
-
-  function removeDoc(itemId: string, docId: string) {
     setB2A((prev) =>
       prev.map((item) =>
         item.id === itemId
-          ? { ...item, docs: item.docs.filter((doc) => doc.id !== docId) }
+          ? { ...item, notesList: [...(item.notesList || []), solution] }
           : item
       )
     );
   }
 
-  // Inline notes
-  function addNote(id: string) {
-    const note: InlineNote = { id: uid(), title: "", content: "", body: "" };
+  function updateSolution(
+    itemId: string,
+    solutionId: string,
+    patch: Partial<InlineNote>
+  ) {
     setB2A((prev) =>
-      prev.map((b) =>
-        b.id === id ? { ...b, notesList: [...(b.notesList || []), note] } : b
-      )
-    );
-  }
-
-  function updateNote(itemId: string, noteId: string, patch: Partial<InlineNote>) {
-    setB2A((prev) =>
-      prev.map((b) =>
-        b.id === itemId
+      prev.map((item) =>
+        item.id === itemId
           ? {
-              ...b,
-              notesList: b.notesList.map((n) =>
-                n.id === noteId ? { ...n, ...patch } : n
+              ...item,
+              notesList: (item.notesList || []).map((solution) =>
+                solution.id === solutionId
+                  ? {
+                      ...solution,
+                      ...patch,
+                      content: patch.body ?? patch.content ?? solution.content ?? "",
+                      body: patch.body ?? patch.content ?? solution.body ?? "",
+                    }
+                  : solution
               ),
             }
-          : b
+          : item
       )
     );
   }
 
-  function deleteNote(itemId: string, noteId: string) {
+  function deleteSolution(itemId: string, solutionId: string) {
     setB2A((prev) =>
-      prev.map((b) =>
-        b.id === itemId
-          ? { ...b, notesList: b.notesList.filter((n) => n.id !== noteId) }
-          : b
+      prev.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              notesList: (item.notesList || []).filter(
+                (solution) => solution.id !== solutionId
+              ),
+            }
+          : item
       )
     );
-    setConfirmDeleteNoteId(null);
+    setConfirmDeleteSolutionId(null);
   }
-
-  function docKind(doc: DocItem) {
-    if (doc.type.includes("pdf")) return "pdf";
-    if (doc.type.includes("image")) return "image";
-    return doc.type || "file";
-  }
-
-  // ---------------------------------------------------------------------------
-  // Detail view
-  // ---------------------------------------------------------------------------
 
   if (selectedId !== null) {
-    const item = b2a.find((b) => b.id === selectedId);
+    const item = b2a.find((entry) => entry.id === selectedId);
+
     if (!item) {
       setSelectedId(null);
       return null;
     }
+
+    const meetings = events
+      .filter((event) => event.linkedB2AId === item.id)
+      .slice()
+      .sort(sortMeetings);
 
     return (
       <div className="page">
@@ -302,7 +273,6 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
         </button>
 
         <div className="detail-page">
-          {/* Section 1 — identity */}
           <div className="detail-section">
             <input
               style={{
@@ -316,292 +286,223 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
               }}
               value={item.company}
               placeholder="company name"
-              onChange={(e) => updateItem(item.id, { company: e.target.value })}
+              onChange={(event) =>
+                updateItem(item.id, { company: event.target.value })
+              }
             />
-
-            <div className="detail-meta-row">
-              <span className="detail-label">status</span>
-              <select
-                className="modal-select"
-                value={item.status}
-                onChange={(e) => updateItem(item.id, { status: e.target.value })}
-              >
-                {B2A_STATUSES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-
-              <span className="detail-label">owner</span>
-              <select
-                className="modal-select"
-                value={item.ownerId}
-                onChange={(e) => updateItem(item.id, { ownerId: e.target.value })}
-              >
-                <option value="">unassigned</option>
-                {team.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              <div className="detail-label">summary</div>
-              <textarea
-                className="notes-area"
-                value={item.summary}
-                placeholder="short summary of the opportunity"
-                rows={2}
-                onChange={(e) => updateItem(item.id, { summary: e.target.value })}
-              />
+            <div className="muted" style={{ fontSize: 13 }}>
+              one company, one applied workspace. meetings here are the same
+              events that appear in calendar.
             </div>
           </div>
 
-          {/* Section 2 — challenge */}
           <div className="detail-section">
-            <div className="detail-label">challenge</div>
+            <div className="detail-label">operation notes</div>
             <textarea
               className="notes-area"
-              value={item.challenge}
-              placeholder="what problem or challenge does this company face?"
-              rows={3}
-              onChange={(e) => updateItem(item.id, { challenge: e.target.value })}
-            />
-          </div>
-
-          {/* Section 3 — AI fronts */}
-          <div className="detail-section">
-            <div className="section-header">
-              <div className="section-title">ai fronts</div>
-              <button className="ghost-btn small-btn" onClick={() => addFront(item.id)}>
-                + add
-              </button>
-            </div>
-            {item.fronts.length === 0 && (
-              <div className="empty-state">no fronts defined yet.</div>
-            )}
-            <div className="section-stack">
-              {item.fronts.map((front) => (
-                <div key={front.id} className="detail-front list-item">
-                  <input
-                    className="modal-input list-item-main"
-                    value={front.text}
-                    placeholder="describe this AI front"
-                    onChange={(e) => updateFront(item.id, front.id, e.target.value)}
-                  />
-                  <button
-                    className="item-delete"
-                    onClick={() => removeFront(item.id, front.id)}
-                    title="remove"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Section 4 — next steps */}
-          <div className="detail-section">
-            <div className="section-header">
-              <div className="section-title">next steps</div>
-              <button className="ghost-btn small-btn" onClick={() => addStep(item.id)}>
-                + add
-              </button>
-            </div>
-            {item.nextSteps.length === 0 && (
-              <div className="empty-state">no next steps yet.</div>
-            )}
-            <div className="section-stack">
-              {item.nextSteps.map((step) => (
-                <div key={step.id} className="detail-step list-item">
-                  <button
-                    className={`todo-check${step.done ? " done" : ""}`}
-                    onClick={() => updateStep(item.id, step.id, { done: !step.done })}
-                    style={{ flexShrink: 0 }}
-                    aria-label={step.done ? "mark undone" : "mark done"}
-                  >
-                    {step.done ? "✓" : ""}
-                  </button>
-                  <input
-                    className="modal-input list-item-main"
-                    value={step.text}
-                    placeholder="next step"
-                    style={{ textDecoration: step.done ? "line-through" : "none", opacity: step.done ? 0.5 : 1 }}
-                    onChange={(e) => updateStep(item.id, step.id, { text: e.target.value })}
-                  />
-                  <button
-                    className="item-delete"
-                    onClick={() => removeStep(item.id, step.id)}
-                    title="remove"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Section 5 — contacts */}
-          <div className="detail-section">
-            <div className="section-header">
-              <div className="section-title">contacts</div>
-              <button className="ghost-btn small-btn" onClick={() => addContact(item.id)}>
-                + add
-              </button>
-            </div>
-            {item.contacts.length === 0 && (
-              <div className="empty-state">no contacts yet.</div>
-            )}
-            <div className="section-stack">
-              {item.contacts.map((contact) => (
-                <div key={contact.id} className="detail-contact">
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                    <input
-                      className="modal-input"
-                      style={{ flex: 2 }}
-                      value={contact.name}
-                      placeholder="name"
-                      onChange={(e) => updateContact(item.id, contact.id, { name: e.target.value })}
-                    />
-                    <input
-                      className="modal-input"
-                      style={{ flex: 1 }}
-                      value={contact.role}
-                      placeholder="role"
-                      onChange={(e) => updateContact(item.id, contact.id, { role: e.target.value })}
-                    />
-                    <button
-                      className="item-delete"
-                      onClick={() => removeContact(item.id, contact.id)}
-                      title="remove"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <input
-                    className="modal-input"
-                    value={contact.email || ""}
-                    placeholder="email"
-                    onChange={(e) => updateContact(item.id, contact.id, { email: e.target.value })}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="detail-section">
-            <div className="section-header">
-              <div className="section-title">documents</div>
-              <label className="ghost-btn small-btn">
-                {uploadingDocsFor === item.id ? "uploading..." : "+ upload"}
-                <input
-                  type="file"
-                  hidden
-                  onChange={async (event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    await addDoc(item.id, file);
-                    event.target.value = "";
-                  }}
-                />
-              </label>
-            </div>
-            {item.docs.length === 0 && (
-              <div className="empty-state">no documents yet.</div>
-            )}
-            {item.docs.length > 0 && (
-              <div className="section-stack">
-                {item.docs.map((doc) => (
-                  <div key={doc.id} className="list-item">
-                    <div className="list-item-main">
-                      <a href={doc.url} target="_blank" rel="noreferrer">
-                        {doc.name}
-                      </a>
-                      <div className="dim">{docKind(doc)}</div>
-                    </div>
-                    <button
-                      className="item-delete"
-                      onClick={() => removeDoc(item.id, doc.id)}
-                      title="remove document"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Section 6 — notes */}
-          <div className="detail-section">
-            <div className="detail-label">general notes</div>
-            <textarea
-              className="notes-area"
+              rows={6}
               value={item.notes}
-              placeholder="free-form notes"
-              rows={3}
-              onChange={(e) => updateItem(item.id, { notes: e.target.value })}
+              placeholder="write notes about how this company operates, constraints, timing, stakeholders and what matters commercially."
+              onChange={(event) =>
+                updateItem(item.id, { notes: event.target.value })
+              }
             />
-
-            <div className="section-header" style={{ marginTop: 16 }}>
-              <div className="section-title">structured notes</div>
-              <button className="ghost-btn small-btn" onClick={() => addNote(item.id)}>
-                + add
-              </button>
-            </div>
-            {(item.notesList || []).length === 0 && (
-              <div className="empty-state">no notes yet.</div>
-            )}
-            <div className="section-stack">
-              {(item.notesList || []).map((note) => (
-                <div key={note.id} className="detail-note">
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <input
-                      className="modal-input"
-                      style={{ fontWeight: 600, flex: 1, marginRight: 8 }}
-                      value={note.title}
-                      placeholder="note title"
-                      onChange={(e) => updateNote(item.id, note.id, { title: e.target.value })}
-                    />
-                    <button
-                      className="item-delete"
-                      onClick={() => setConfirmDeleteNoteId(note.id)}
-                      title="delete note"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <textarea
-                    className="notes-area"
-                    value={note.body}
-                    placeholder="note body"
-                    rows={3}
-                    onChange={(e) => updateNote(item.id, note.id, { body: e.target.value })}
-                  />
-                </div>
-              ))}
-            </div>
           </div>
 
-          {/* Section 7 — proposed banner */}
-          {item.proposed && (
-            <div className="proposed-section">
-              <div className="detail-label" style={{ marginBottom: 8 }}>
-                this applied item is still a proposed idea.
+          <div className="detail-section">
+            <div className="detail-label">applied strategy</div>
+            <textarea
+              className="notes-area"
+              rows={5}
+              value={item.summary}
+              placeholder="what is the strategy for this applied engagement?"
+              onChange={(event) =>
+                updateItem(item.id, { summary: event.target.value })
+              }
+            />
+          </div>
+
+          <div className="detail-section">
+            <div className="section-header">
+              <div>
+                <div className="section-title">meetings</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  linked directly to calendar
+                </div>
               </div>
-              <p className="muted" style={{ marginBottom: 12, fontSize: "0.875rem" }}>
-                confirm it to move it into the active applied pipeline as a lead.
-              </p>
-              <button
-                className="action-btn"
-                onClick={() => updateItem(item.id, { proposed: false, status: "lead" })}
-              >
-                confirm applied
+              <button className="ghost-btn small-btn" onClick={() => addMeeting(item.id)}>
+                + add meeting
               </button>
             </div>
-          )}
 
-          {/* Danger zone */}
+            {meetings.length === 0 ? (
+              <div className="empty-state">no meetings linked to this company yet.</div>
+            ) : (
+              <div className="section-stack">
+                {meetings.map((meeting) => (
+                  <div key={meeting.id} className="list-item">
+                    <div className="section-stack">
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <input
+                          className="modal-input"
+                          style={{ flex: 1, fontWeight: 600 }}
+                          value={meeting.title}
+                          placeholder="meeting title"
+                          onChange={(event) =>
+                            updateMeeting(meeting.id, { title: event.target.value })
+                          }
+                        />
+                        <button
+                          className="item-delete"
+                          onClick={() => deleteMeeting(meeting.id)}
+                          title="delete meeting"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <div className="detail-meta-row">
+                        <span className="detail-label">date</span>
+                        <input
+                          className="modal-input"
+                          type="date"
+                          value={meeting.date}
+                          style={{ width: 144 }}
+                          onChange={(event) =>
+                            updateMeeting(meeting.id, { date: event.target.value })
+                          }
+                        />
+
+                        <label
+                          style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={meeting.allDay}
+                            onChange={(event) =>
+                              updateMeeting(meeting.id, {
+                                allDay: event.target.checked,
+                              })
+                            }
+                          />
+                          <span className="detail-label" style={{ marginBottom: 0 }}>
+                            all day
+                          </span>
+                        </label>
+
+                        {!meeting.allDay ? (
+                          <>
+                            <span className="detail-label">time</span>
+                            <input
+                              className="modal-input"
+                              type="time"
+                              value={meeting.time}
+                              style={{ width: 112 }}
+                              onChange={(event) =>
+                                updateMeeting(meeting.id, { time: event.target.value })
+                              }
+                            />
+
+                            <span className="detail-label">duration</span>
+                            <input
+                              className="modal-input"
+                              type="number"
+                              min={30}
+                              step={30}
+                              value={meeting.duration}
+                              style={{ width: 96 }}
+                              onChange={(event) =>
+                                updateMeeting(meeting.id, {
+                                  duration: Math.max(
+                                    30,
+                                    Number(event.target.value) || 60
+                                  ),
+                                })
+                              }
+                            />
+                          </>
+                        ) : null}
+                      </div>
+
+                      <div className="dim">{formatMeetingLabel(meeting)}</div>
+
+                      <div>
+                        <div className="detail-label">meeting notes</div>
+                        <textarea
+                          className="notes-area"
+                          rows={4}
+                          value={meeting.notes}
+                          placeholder="notes from this meeting"
+                          onChange={(event) =>
+                            updateMeeting(meeting.id, { notes: event.target.value })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="detail-section">
+            <div className="section-header">
+              <div>
+                <div className="section-title">applied solutions</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  solution spaces to develop what will be applied in this company
+                </div>
+              </div>
+              <button className="ghost-btn small-btn" onClick={() => addSolution(item.id)}>
+                + add solution
+              </button>
+            </div>
+
+            {(item.notesList || []).length === 0 ? (
+              <div className="empty-state">no applied solutions defined yet.</div>
+            ) : (
+              <div className="section-stack">
+                {(item.notesList || []).map((solution) => (
+                  <div key={solution.id} className="detail-note list-item">
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <input
+                        className="modal-input"
+                        style={{ flex: 1, fontWeight: 600 }}
+                        value={solution.title}
+                        placeholder="solution name"
+                        onChange={(event) =>
+                          updateSolution(item.id, solution.id, {
+                            title: event.target.value,
+                          })
+                        }
+                      />
+                      <button
+                        className="item-delete"
+                        onClick={() => setConfirmDeleteSolutionId(solution.id)}
+                        title="delete solution"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <textarea
+                      className="notes-area"
+                      rows={5}
+                      value={solution.body || solution.content || ""}
+                      placeholder="develop the solution, write hypotheses, scope, implementation ideas and anything operational here."
+                      onChange={(event) =>
+                        updateSolution(item.id, solution.id, {
+                          body: event.target.value,
+                          content: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="detail-section" style={{ marginTop: 32 }}>
             <button
               className="danger-btn small-btn"
@@ -619,74 +520,47 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
           label={`"${item.company || "untitled"}"`}
         />
         <ConfirmModal
-          show={confirmDeleteNoteId !== null}
-          onClose={() => setConfirmDeleteNoteId(null)}
-          onConfirm={() => deleteNote(item.id, confirmDeleteNoteId!)}
-          label="this note"
+          show={confirmDeleteSolutionId !== null}
+          onClose={() => setConfirmDeleteSolutionId(null)}
+          onConfirm={() => deleteSolution(item.id, confirmDeleteSolutionId!)}
+          label="this solution"
         />
       </div>
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // List view
-  // ---------------------------------------------------------------------------
-
-  const confirmed = b2a.filter((b) => !b.proposed);
-  const proposed = b2a.filter((b) => b.proposed);
-
-  // Group confirmed by status, preserve B2A_STATUSES order
-  const grouped: Record<string, B2AItem[]> = {};
-  B2A_STATUSES.forEach((s) => {
-    const items = confirmed.filter((b) => b.status === s);
-    if (items.length > 0) grouped[s] = items;
-  });
+  const appliedItems = b2a.slice().sort((a, b) => a.company.localeCompare(b.company));
 
   return (
     <div className="page">
       <div className="page-actions">
-        <button className="action-btn" onClick={() => createB2A(true)}>
-          + propose applied
+        <button className="action-btn" onClick={createApplied}>
+          + new applied
         </button>
       </div>
 
-      {confirmed.length === 0 && (
-        <div className="empty-state">no applied items in the pipeline yet.</div>
-      )}
+      {appliedItems.length === 0 ? (
+        <div className="empty-state">no applied companies yet.</div>
+      ) : (
+        <div className="cards-grid">
+          {appliedItems.map((item) => {
+            const meetingCount = events.filter(
+              (event) => event.linkedB2AId === item.id
+            ).length;
 
-      {Object.entries(grouped).map(([status, items]) => (
-        <section key={status} className="top-space">
-          <div className="section-title" style={{ marginBottom: 10 }}>{status}</div>
-          <div className="cards-grid">
-            {items.map((b) => (
-              <B2ACard
-                key={b.id}
-                item={b}
+            return (
+              <AppliedCard
+                key={item.id}
+                item={item}
+                meetingCount={meetingCount}
+                solutionCount={(item.notesList || []).length}
                 onSelect={(id) => {
                   setSelectedId(id);
                   router.push(`/b2a/${id}`);
                 }}
               />
-            ))}
-          </div>
-        </section>
-      ))}
-
-      {proposed.length > 0 && (
-        <div className="proposed-section top-space">
-          <div className="section-title" style={{ marginBottom: 12 }}>proposed ideas</div>
-          <div className="cards-grid">
-            {proposed.map((b) => (
-              <B2ACard
-                key={b.id}
-                item={b}
-                onSelect={(id) => {
-                  setSelectedId(id);
-                  router.push(`/b2a/${id}`);
-                }}
-              />
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
     </div>
