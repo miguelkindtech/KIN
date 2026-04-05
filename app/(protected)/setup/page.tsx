@@ -1,3 +1,5 @@
+import ReindexButton from "@/components/chat/ReindexButton";
+
 export default function SetupPage() {
   return (
     <div className="page">
@@ -73,12 +75,13 @@ export default function SetupPage() {
         <div className="card">
           <div className="section-title">6. first indexing</div>
           <p className="muted">
-            After the env vars are set, start the app and run a one-time POST to{" "}
-            <code>/api/reindex</code>. Example:
+            After the env vars are set, sign in and click the button below once.
+            It calls the protected <code>/api/reindex</code> route with your
+            current session.
           </p>
-          <pre className="setup-code">
-            <code>curl -X POST http://127.0.0.1:3010/api/reindex</code>
-          </pre>
+          <div style={{ marginTop: 14 }}>
+            <ReindexButton />
+          </div>
           <p className="muted">
             From that point on, kind. AI auto-indexes changes to verticals,
             applied, notes, events, costs, team and day notes.

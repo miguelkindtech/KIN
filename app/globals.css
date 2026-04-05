@@ -354,6 +354,11 @@ input, textarea, select { color: inherit; }
   font-size: 12px;
   overflow: auto;
 }
+.setup-reindex {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
 .kind-chat-trigger {
   position: fixed;

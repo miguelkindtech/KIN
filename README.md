@@ -82,11 +82,7 @@ enabled for the relevant tables.
    `ANTHROPIC_API_KEY` to `.env.local`.
 3. Add the same variables in Vercel.
 4. Start the app with `npm run dev`.
-5. Rebuild the vector index once:
-
-```bash
-curl -X POST http://127.0.0.1:3010/api/reindex
-```
-
-6. Open the floating chat button in the bottom-right corner and ask:
+5. Sign in and open `/setup`.
+6. Click `run kind. AI reindex` once.
+7. Open the floating chat button in the bottom-right corner and ask:
    `What's the state of Compy?`
