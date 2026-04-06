@@ -90,10 +90,26 @@ export function normalizeBlock(block: Partial<Block>): Block {
   return { text: "", ...block } as Block;
 }
 
+function stripTextHtml(value: string) {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function notePreview(note: Note): string {
   for (const block of note.blocks || []) {
     if (["text", "heading1", "heading2", "heading3", "callout", "code", "todo"].includes(block.type) && (block.text || "").trim()) {
-      return block.text!.trim();
+      return stripTextHtml(block.text || "");
     }
     if (block.type === "entity_link") return "linked entity";
     if (block.type === "note_link") return "linked note";

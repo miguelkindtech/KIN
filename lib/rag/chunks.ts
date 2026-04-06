@@ -79,7 +79,7 @@ function noteBlocksToText(blocks: unknown[]) {
         case "divider":
           return "";
         default:
-          return normalizeWhitespace(item.text || "");
+          return stripHtml(item.text || "");
       }
     })
     .filter(Boolean);

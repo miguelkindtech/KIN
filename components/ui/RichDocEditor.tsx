@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const PASTEL_UNDERLINES = [
@@ -61,6 +62,9 @@ type RichDocEditorProps = {
   value: string;
   placeholder?: string;
   backLabel?: string;
+  beforeEditor?: ReactNode;
+  sidePanel?: ReactNode;
+  toolbarExtras?: ReactNode;
   onTitleChange?: (value: string) => void;
   onChange: (value: string) => void;
   onBack: () => void;
@@ -73,6 +77,9 @@ export default function RichDocEditor({
   value,
   placeholder = "Start writing…",
   backLabel = "back",
+  beforeEditor,
+  sidePanel,
+  toolbarExtras,
   onTitleChange,
   onChange,
   onBack,
@@ -145,7 +152,7 @@ export default function RichDocEditor({
         ← {backLabel}
       </button>
 
-      <div className="rich-doc-shell">
+      <div className={sidePanel ? "note-editor-shell" : "rich-doc-shell"}>
         <div className="card rich-doc-card">
           <div className="rich-doc-head">
             {onTitleChange ? (
@@ -229,6 +236,7 @@ export default function RichDocEditor({
                 />
               ))}
             </div>
+            {toolbarExtras}
             {onDelete ? (
               <button
                 className="danger-btn small-btn rich-doc-delete"
@@ -240,6 +248,8 @@ export default function RichDocEditor({
             ) : null}
           </div>
 
+          {beforeEditor}
+
           <div
             ref={editorRef}
             className={`rich-doc-editor${isEmpty ? " is-empty" : ""}`}
@@ -250,6 +260,10 @@ export default function RichDocEditor({
             onBlur={syncFromDom}
           />
         </div>
+
+        {sidePanel ? (
+          <div className="card note-meta-card rich-doc-side-panel">{sidePanel}</div>
+        ) : null}
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ import { syncTableById } from "@/lib/supabase/sync";
 import { uploadAttachment } from "@/lib/supabase/storage";
 import Modal from "@/components/ui/Modal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
-import BlockEditor from "@/components/ui/BlockEditor";
+import RichDocEditor from "@/components/ui/RichDocEditor";
 
 const DESKTOP_FOLDER_PREFIX = "desktop-folder:";
 const DESKTOP_FOLDERS_STORAGE_KEY = "kind-notes-desktop-folders";
@@ -46,67 +46,93 @@ function readStoredFolders() {
   }
 }
 
-function createBlocksFromImportedPdf(
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function toRichParagraphs(value: string) {
+  return value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+function blockToRichHtml(block: Block) {
+  const text = block.text || "";
+  const hasHtml = /<[a-z][\s\S]*>/i.test(text.trim());
+
+  switch (block.type) {
+    case "heading1":
+      return `<h1>${escapeHtml(text).replace(/\n/g, "<br>")}</h1>`;
+    case "heading2":
+      return `<h2>${escapeHtml(text).replace(/\n/g, "<br>")}</h2>`;
+    case "heading3":
+      return `<h3>${escapeHtml(text).replace(/\n/g, "<br>")}</h3>`;
+    case "callout":
+      return `<blockquote>${escapeHtml(text).replace(/\n/g, "<br>")}</blockquote>`;
+    case "code":
+      return `<pre><code>${escapeHtml(text)}</code></pre>`;
+    case "todo":
+      return `<p>${block.checked ? "☑" : "☐"} ${escapeHtml(text)}</p>`;
+    case "divider":
+      return "<hr />";
+    case "table":
+      return Array.isArray(block.rows)
+        ? block.rows
+            .map((row) => `<p>${escapeHtml(row.join(" | "))}</p>`)
+            .join("")
+        : "";
+    case "note_link":
+      return `<p>Linked note ${escapeHtml(block.noteId || "")}</p>`;
+    case "entity_link":
+      return `<p>Linked entity ${escapeHtml(block.entity || "")}</p>`;
+    case "text":
+    default:
+      if (!text.trim()) return "";
+      return hasHtml ? text : toRichParagraphs(text);
+  }
+}
+
+function blocksToRichDoc(blocks: Block[]) {
+  const html = (blocks || [])
+    .filter((block) => block.type !== "pdf" && block.type !== "image")
+    .map(blockToRichHtml)
+    .filter(Boolean)
+    .join("");
+
+  return html.trim() || "<p></p>";
+}
+
+function createBlocksFromRichDoc(html: string, preservedBlocks: Block[] = []) {
+  const richTextBlock = {
+    id: uid(),
+    type: "text" as const,
+    text: html.trim() || "<p></p>",
+  };
+
+  return [...preservedBlocks, richTextBlock];
+}
+
+function createRichDocFromImportedPdf(
   text: string,
-  pageTexts: string[],
-  fileUrl: string,
-  fileName: string
+  pageTexts: string[]
 ) {
   const normalizedPages = pageTexts.length > 0 ? pageTexts : [text.trim()];
 
-  const blocks: Block[] = [
-    {
-      id: uid(),
-      type: "pdf",
-      src: fileUrl,
-      name: fileName,
-      caption: fileName,
-    },
-    {
-      id: uid(),
-      type: "divider",
-    },
-  ];
-
-  normalizedPages.forEach((pageText, pageIndex) => {
-    if (normalizedPages.length > 1) {
-      blocks.push({
-        id: uid(),
-        type: "heading3",
-        text: `Page ${pageIndex + 1}`,
-      });
-    }
-
-    const paragraphs = pageText
-      .split(/\n{2,}/)
-      .map((paragraph) => paragraph.trim())
-      .filter(Boolean);
-
-    if (paragraphs.length === 0 && pageText.trim()) {
-      blocks.push({
-        id: uid(),
-        type: "text",
-        text: pageText.trim(),
-      });
-    } else {
-      paragraphs.forEach((paragraph) => {
-        blocks.push({
-          id: uid(),
-          type: "text",
-          text: paragraph,
-        });
-      });
-    }
-
-    if (pageIndex < normalizedPages.length - 1) {
-      blocks.push({
-        id: uid(),
-        type: "divider",
-      });
-    }
-  });
-
-  return blocks;
+  return normalizedPages
+    .map((pageText, pageIndex) => {
+      const title =
+        normalizedPages.length > 1 ? `<h3>Page ${pageIndex + 1}</h3>` : "";
+      return `${title}${toRichParagraphs(pageText)}`;
+    })
+    .join("");
 }
 
 type NoteCardProps = {
@@ -293,7 +319,7 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
       }
 
       const uploaded = await uploadAttachment(supabase, file, "notes", note.id);
-      const nextBlocks = createBlocksFromImportedPdf(
+      const nextHtml = createRichDocFromImportedPdf(
         String(payload?.text || ""),
         Array.isArray(payload?.pages)
           ? payload.pages
@@ -301,10 +327,15 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
                 typeof page === "string" ? page.trim() : ""
               )
               .filter(Boolean)
-          : [],
-        uploaded.url,
-        uploaded.name
+          : []
       );
+      const pdfBlock: Block = {
+        id: uid(),
+        type: "pdf",
+        src: uploaded.url,
+        name: uploaded.name,
+        caption: uploaded.name,
+      };
       const suggestedTitle = String(payload?.suggestedTitle || "").trim();
 
       updateNote(note.id, {
@@ -316,7 +347,7 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
           !note.description.trim()
             ? `Imported from ${uploaded.name}`
             : note.description,
-        blocks: nextBlocks,
+        blocks: createBlocksFromRichDoc(nextHtml, [pdfBlock]),
       });
 
       setPdfImportMessage("PDF imported into this note.");
@@ -339,166 +370,193 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
 
     const createdAt = note.createdAt || new Date().toISOString();
     const updatedAt = note.updatedAt || createdAt;
+    const pdfBlocks = note.blocks.filter((block) => block.type === "pdf");
+    const docValue = blocksToRichDoc(note.blocks);
 
     return (
-      <div className="page">
-        <button
-          className="back-btn"
-          onClick={() => {
+      <>
+        <RichDocEditor
+          title={note.title}
+          titlePlaceholder="untitled note"
+          value={docValue}
+          placeholder="Write the note here..."
+          backLabel="back to notes"
+          onTitleChange={(value) => updateNote(note.id, { title: value })}
+          onChange={(value) =>
+            updateNote(note.id, {
+              blocks: createBlocksFromRichDoc(value, pdfBlocks),
+            })
+          }
+          onBack={() => {
             setEditingId(null);
             router.push("/notes");
           }}
-        >
-          ← back to notes
-        </button>
-
-        <div className="note-editor-shell">
-          <div className="card note-editor">
-            <input
-              className="note-title"
-              value={note.title}
-              placeholder="untitled note"
-              onChange={(event) =>
-                updateNote(note.id, { title: event.target.value })
-              }
-            />
-            <input
-              style={{ marginBottom: 16, fontSize: "0.875rem", opacity: 0.7 }}
-              className="modal-input"
-              value={note.description}
-              placeholder="add a description"
-              onChange={(event) =>
-                updateNote(note.id, { description: event.target.value })
-              }
-            />
-            <BlockEditor
-              blocks={note.blocks}
-              uploadContext={{ entityType: "notes", entityId: note.id }}
-              onChange={(blocks: Block[]) => updateNote(note.id, { blocks })}
-            />
-          </div>
-
-          <div
-            className="card note-meta-card"
-            style={{
-              padding: "20px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 20,
-            }}
-          >
-            <div>
-              <div className="detail-label">category</div>
-              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                {NOTE_CATEGORIES.map((category) => (
-                  <button
-                    key={category}
-                    className={
-                      note.category === category ? "action-btn" : "ghost-btn"
-                    }
-                    style={{ fontSize: "0.78rem", padding: "4px 10px" }}
-                    onClick={() =>
-                      updateNote(note.id, {
-                        category: category as Note["category"],
-                      })
-                    }
-                  >
-                    {category}
-                  </button>
+          beforeEditor={
+            pdfBlocks.length > 0 ? (
+              <div className="rich-doc-attachments">
+                {pdfBlocks.map((block) => (
+                  <div key={block.id} className="rich-doc-attachment">
+                    <div className="rich-doc-attachment-head">
+                      <div className="detail-label">imported pdf</div>
+                      <a
+                        className="ghost-btn small-btn"
+                        href={block.src}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        open
+                      </a>
+                    </div>
+                    <div className="muted rich-doc-attachment-name">
+                      {block.name || block.caption || "document.pdf"}
+                    </div>
+                    {block.src ? (
+                      <div className="rich-doc-pdf-frame">
+                        <iframe
+                          src={block.src}
+                          title={block.name || "Imported PDF"}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
                 ))}
               </div>
-            </div>
-
-            <div>
-              <div className="detail-label">color</div>
-              <div className="color-palette" style={{ marginTop: 6 }}>
-                {NOTE_COLORS.map((color) => (
-                  <button
-                    key={color.bg}
-                    className={`swatch${note.color === color.bg ? " selected" : ""}`}
-                    style={{ background: color.bg, color: color.fg }}
-                    title={color.symbol}
-                    onClick={() => updateNote(note.id, { color: color.bg })}
-                  >
-                    {color.symbol}
-                  </button>
-                ))}
+            ) : null
+          }
+          sidePanel={
+            <div
+              style={{
+                padding: "20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 20,
+              }}
+            >
+              <div>
+                <div className="detail-label">description</div>
+                <input
+                  className="modal-input"
+                  value={note.description}
+                  placeholder="add a description"
+                  onChange={(event) =>
+                    updateNote(note.id, { description: event.target.value })
+                  }
+                  style={{ marginTop: 8 }}
+                />
               </div>
-            </div>
 
-            <div>
-              <div className="detail-label">created</div>
-              <div className="muted" style={{ fontSize: "0.8rem", marginTop: 4 }}>
-                {new Date(createdAt).toLocaleDateString("en-GB", {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                })}
-              </div>
-            </div>
-
-            <div>
-              <div className="detail-label">updated</div>
-              <div className="muted" style={{ fontSize: "0.8rem", marginTop: 4 }}>
-                {new Date(updatedAt).toLocaleDateString("en-GB", {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                })}
-              </div>
-            </div>
-
-            <div>
-              <div className="detail-label">import from pdf</div>
-              <input
-                ref={importPdfRef}
-                type="file"
-                accept="application/pdf"
-                style={{ display: "none" }}
-                onChange={async (event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  await handleImportPdf(note, file);
-                  event.target.value = "";
-                }}
-              />
-              <button
-                className="action-btn small-btn"
-                disabled={importingPdf}
-                onClick={() => importPdfRef.current?.click()}
-                style={{ width: "100%" }}
-              >
-                {importingPdf ? "importing pdf..." : "import pdf into note"}
-              </button>
-              {pdfImportMessage ? (
-                <div
-                  className="muted"
-                  style={{ fontSize: "0.78rem", lineHeight: 1.5, marginTop: 8 }}
-                >
-                  {pdfImportMessage}
+              <div>
+                <div className="detail-label">category</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                  {NOTE_CATEGORIES.map((category) => (
+                    <button
+                      key={category}
+                      className={
+                        note.category === category ? "action-btn" : "ghost-btn"
+                      }
+                      style={{ fontSize: "0.78rem", padding: "4px 10px" }}
+                      onClick={() =>
+                        updateNote(note.id, {
+                          category: category as Note["category"],
+                        })
+                      }
+                    >
+                      {category}
+                    </button>
+                  ))}
                 </div>
-              ) : null}
-            </div>
+              </div>
 
-            <div style={{ marginTop: "auto" }}>
-              <button
-                className="danger-btn small-btn"
-                style={{ width: "100%" }}
-                onClick={() => setConfirmDeleteId(note.id)}
-              >
-                delete note
-              </button>
-            </div>
-          </div>
-        </div>
+              <div>
+                <div className="detail-label">color</div>
+                <div className="color-palette" style={{ marginTop: 6 }}>
+                  {NOTE_COLORS.map((color) => (
+                    <button
+                      key={color.bg}
+                      className={`swatch${note.color === color.bg ? " selected" : ""}`}
+                      style={{ background: color.bg, color: color.fg }}
+                      title={color.symbol}
+                      onClick={() => updateNote(note.id, { color: color.bg })}
+                    >
+                      {color.symbol}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
+              <div>
+                <div className="detail-label">created</div>
+                <div className="muted" style={{ fontSize: "0.8rem", marginTop: 4 }}>
+                  {new Date(createdAt).toLocaleDateString("en-GB", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <div className="detail-label">updated</div>
+                <div className="muted" style={{ fontSize: "0.8rem", marginTop: 4 }}>
+                  {new Date(updatedAt).toLocaleDateString("en-GB", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <div className="detail-label">import from pdf</div>
+                <input
+                  ref={importPdfRef}
+                  type="file"
+                  accept="application/pdf"
+                  style={{ display: "none" }}
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    await handleImportPdf(note, file);
+                    event.target.value = "";
+                  }}
+                />
+                <button
+                  className="action-btn small-btn"
+                  disabled={importingPdf}
+                  onClick={() => importPdfRef.current?.click()}
+                  style={{ width: "100%" }}
+                >
+                  {importingPdf ? "importing pdf..." : "import pdf into note"}
+                </button>
+                {pdfImportMessage ? (
+                  <div
+                    className="muted"
+                    style={{ fontSize: "0.78rem", lineHeight: 1.5, marginTop: 8 }}
+                  >
+                    {pdfImportMessage}
+                  </div>
+                ) : null}
+              </div>
+
+              <div style={{ marginTop: "auto" }}>
+                <button
+                  className="danger-btn small-btn"
+                  style={{ width: "100%" }}
+                  onClick={() => setConfirmDeleteId(note.id)}
+                >
+                  delete note
+                </button>
+              </div>
+            </div>
+          }
+        />
         <ConfirmModal
           show={confirmDeleteId !== null}
           onClose={() => setConfirmDeleteId(null)}
           onConfirm={() => deleteNote(confirmDeleteId!)}
           label={`"${note.title || "untitled"}"`}
         />
-      </div>
+      </>
     );
   }
 
