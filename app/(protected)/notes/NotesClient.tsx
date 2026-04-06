@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/providers/AppContext";
@@ -11,6 +11,7 @@ import { useAutoSave } from "@/hooks/useAutoSave";
 import { Note, Block } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { syncTableById } from "@/lib/supabase/sync";
+import { uploadAttachment } from "@/lib/supabase/storage";
 import Modal from "@/components/ui/Modal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import BlockEditor from "@/components/ui/BlockEditor";
@@ -43,6 +44,69 @@ function readStoredFolders() {
   } catch {
     return [];
   }
+}
+
+function createBlocksFromImportedPdf(
+  text: string,
+  pageTexts: string[],
+  fileUrl: string,
+  fileName: string
+) {
+  const normalizedPages = pageTexts.length > 0 ? pageTexts : [text.trim()];
+
+  const blocks: Block[] = [
+    {
+      id: uid(),
+      type: "pdf",
+      src: fileUrl,
+      name: fileName,
+      caption: fileName,
+    },
+    {
+      id: uid(),
+      type: "divider",
+    },
+  ];
+
+  normalizedPages.forEach((pageText, pageIndex) => {
+    if (normalizedPages.length > 1) {
+      blocks.push({
+        id: uid(),
+        type: "heading3",
+        text: `Page ${pageIndex + 1}`,
+      });
+    }
+
+    const paragraphs = pageText
+      .split(/\n{2,}/)
+      .map((paragraph) => paragraph.trim())
+      .filter(Boolean);
+
+    if (paragraphs.length === 0 && pageText.trim()) {
+      blocks.push({
+        id: uid(),
+        type: "text",
+        text: pageText.trim(),
+      });
+    } else {
+      paragraphs.forEach((paragraph) => {
+        blocks.push({
+          id: uid(),
+          type: "text",
+          text: paragraph,
+        });
+      });
+    }
+
+    if (pageIndex < normalizedPages.length - 1) {
+      blocks.push({
+        id: uid(),
+        type: "divider",
+      });
+    }
+  });
+
+  return blocks;
 }
 
 type NoteCardProps = {
@@ -114,6 +178,7 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
   const { loaded, notes, setNotes } = useApp();
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
+  const importPdfRef = useRef<HTMLInputElement | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(defaultId ?? null);
   const [showCreate, setShowCreate] = useState(false);
@@ -127,6 +192,8 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
   const [newDesc, setNewDesc] = useState("");
   const [newCategory, setNewCategory] = useState<Note["category"]>("explore");
   const [newColor, setNewColor] = useState<string>(NOTE_COLORS[0].bg);
+  const [importingPdf, setImportingPdf] = useState(false);
+  const [pdfImportMessage, setPdfImportMessage] = useState("");
 
   useAutoSave(
     notes,
@@ -204,6 +271,62 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
     setConfirmDeleteId(null);
     setEditingId(null);
     router.push("/notes");
+  }
+
+  async function handleImportPdf(note: Note, file: File) {
+    setImportingPdf(true);
+    setPdfImportMessage("");
+
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+
+      const response = await fetch("/api/notes/import-pdf", {
+        method: "POST",
+        body: formData,
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not read this PDF.");
+      }
+
+      const uploaded = await uploadAttachment(supabase, file, "notes", note.id);
+      const nextBlocks = createBlocksFromImportedPdf(
+        String(payload?.text || ""),
+        Array.isArray(payload?.pages)
+          ? payload.pages
+              .map((page: unknown) =>
+                typeof page === "string" ? page.trim() : ""
+              )
+              .filter(Boolean)
+          : [],
+        uploaded.url,
+        uploaded.name
+      );
+      const suggestedTitle = String(payload?.suggestedTitle || "").trim();
+
+      updateNote(note.id, {
+        title:
+          !note.title.trim() || note.title.trim().toLowerCase() === "untitled note"
+            ? suggestedTitle || note.title
+            : note.title,
+        description:
+          !note.description.trim()
+            ? `Imported from ${uploaded.name}`
+            : note.description,
+        blocks: nextBlocks,
+      });
+
+      setPdfImportMessage("PDF imported into this note.");
+    } catch (error) {
+      setPdfImportMessage(
+        error instanceof Error ? error.message : "Could not import the PDF."
+      );
+    } finally {
+      setImportingPdf(false);
+    }
   }
 
   if (editingId !== null) {
@@ -323,6 +446,38 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
                   year: "numeric",
                 })}
               </div>
+            </div>
+
+            <div>
+              <div className="detail-label">import from pdf</div>
+              <input
+                ref={importPdfRef}
+                type="file"
+                accept="application/pdf"
+                style={{ display: "none" }}
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  await handleImportPdf(note, file);
+                  event.target.value = "";
+                }}
+              />
+              <button
+                className="action-btn small-btn"
+                disabled={importingPdf}
+                onClick={() => importPdfRef.current?.click()}
+                style={{ width: "100%" }}
+              >
+                {importingPdf ? "importing pdf..." : "import pdf into note"}
+              </button>
+              {pdfImportMessage ? (
+                <div
+                  className="muted"
+                  style={{ fontSize: "0.78rem", lineHeight: 1.5, marginTop: 8 }}
+                >
+                  {pdfImportMessage}
+                </div>
+              ) : null}
             </div>
 
             <div style={{ marginTop: "auto" }}>
