@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/providers/AppContext";
 import { addMinutes, formatDate, uid } from "@/lib/utils";
@@ -49,43 +49,25 @@ function toDocHtml(value: string) {
     .join("");
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+function suggestionTitlesForItem(item: B2AItem) {
+  return item.company.trim().toLowerCase() === "tlantic"
+    ? TLANTIC_SUGGESTION_TITLES
+    : [];
 }
 
-function isLegacyTlanticSuggestionSet(item: B2AItem) {
-  const company = item.company.trim().toLowerCase();
-  if (company !== "tlantic") return false;
-  if ((item.notesList || []).length !== TLANTIC_SUGGESTION_TITLES.length) return false;
-
-  const currentTitles = new Set(
-    (item.notesList || []).map((note) => note.title.trim()).filter(Boolean)
+function splitAppliedNotes(item: B2AItem) {
+  const suggestionTitles = new Set(
+    suggestionTitlesForItem(item).map((title) => title.trim())
   );
 
-  return TLANTIC_SUGGESTION_TITLES.every((title) => currentTitles.has(title));
-}
+  const suggestions = (item.notesList || []).filter((note) =>
+    suggestionTitles.has(note.title.trim())
+  );
+  const solutions = (item.notesList || []).filter(
+    (note) => !suggestionTitles.has(note.title.trim())
+  );
 
-function buildAppliedSuggestionsHtml(notesList: InlineNote[]) {
-  const sections = notesList
-    .map((note) => {
-      const title = escapeHtml(note.title.trim() || "Untitled suggestion");
-      const body = toDocHtml(note.body || note.content || "");
-      return `<h3>${title}</h3>${body}`;
-    })
-    .join("");
-
-  return `<hr /><h2>Applied Suggestions</h2><p>Directions discussed in the meeting and worth exploring before turning them into real applied solutions.</p>${sections}`;
-}
-
-function mergeStrategyWithSuggestions(item: B2AItem) {
-  const base = toDocHtml(item.summary);
-  const suggestions = buildAppliedSuggestionsHtml(item.notesList || []);
-  return `${base}${suggestions}`;
+  return { suggestions, solutions };
 }
 
 function AppliedCard({
@@ -178,27 +160,6 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
     },
     300
   );
-
-  useEffect(() => {
-    if (!loaded) return;
-
-    setB2A((prev) => {
-      let changed = false;
-
-      const next = prev.map((item) => {
-        if (!isLegacyTlanticSuggestionSet(item)) return item;
-
-        changed = true;
-        return {
-          ...item,
-          summary: mergeStrategyWithSuggestions(item),
-          notesList: [],
-        };
-      });
-
-      return changed ? next : prev;
-    });
-  }, [loaded, setB2A]);
 
   if (!loaded) {
     return <div className="loading">Loading Applied...</div>;
@@ -340,6 +301,8 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
       .filter((event) => event.linkedB2AId === item.id)
       .slice()
       .sort(sortMeetings);
+    const { suggestions: suggestionNotes, solutions: solutionNotes } =
+      splitAppliedNotes(item);
 
     if (docView !== null) {
       if (docView.type === "operation") {
@@ -394,7 +357,11 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
             })
           }
           onBack={() => setDocView(null)}
-          onDelete={() => setConfirmDeleteSolutionId(solution.id)}
+          onDelete={
+            solutionNotes.some((entry) => entry.id === solution.id)
+              ? () => setConfirmDeleteSolutionId(solution.id)
+              : undefined
+          }
         />
       );
     }
@@ -474,6 +441,43 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
                 open the document for positioning, scope and approach
               </div>
             </button>
+
+            {suggestionNotes.length > 0 ? (
+              <div className="section-stack" style={{ marginTop: 14 }}>
+                <div>
+                  <div className="section-title">applied suggestions</div>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                    proposal cards discussed so far, kept separate from the main strategy doc
+                  </div>
+                </div>
+                <div className="cards-grid">
+                  {suggestionNotes.map((suggestion) => (
+                    <div key={suggestion.id} className="entity-card doc-launch-card">
+                      <div className="entity-title">
+                        {suggestion.title || "Untitled suggestion"}
+                      </div>
+                      <div className="entity-subtitle">
+                        open this proposal note to review the idea in full
+                      </div>
+                      <div className="doc-launch-actions">
+                        <button
+                          className="ghost-btn small-btn"
+                          onClick={() =>
+                            setDocView({
+                              type: "solution",
+                              solutionId: suggestion.id,
+                            })
+                          }
+                          type="button"
+                        >
+                          open note
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="detail-section">
@@ -612,11 +616,11 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
               </button>
             </div>
 
-            {(item.notesList || []).length === 0 ? (
+            {solutionNotes.length === 0 ? (
               <div className="empty-state">no applied solutions defined yet.</div>
             ) : (
               <div className="cards-grid">
-                {(item.notesList || []).map((solution) => (
+                {solutionNotes.map((solution) => (
                   <div key={solution.id} className="entity-card doc-launch-card">
                     <div className="entity-title">
                       {solution.title || "Untitled solution"}
