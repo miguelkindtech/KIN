@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/providers/AppContext";
 import { addMinutes, formatDate, uid } from "@/lib/utils";
@@ -10,6 +10,17 @@ import { createClient } from "@/lib/supabase/client";
 import { syncTableById } from "@/lib/supabase/sync";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import RichDocEditor from "@/components/ui/RichDocEditor";
+
+const TLANTIC_SUGGESTION_TITLES = [
+  "ShiftSense : Motor de Inteligência Contextual para Escalas",
+  "PulseFlow : Copiloto Conversacional de Operações para Gestores",
+  "TrainMap : Sistema Inteligente de Desenvolvimento e Formação de Equipas",
+  "VoxStore : Assistente AI para Colaboradores de Loja",
+  "LeaveSync : Gestão Inteligente de Ausências e Férias Multi-País",
+  "ScoreLoop : Motor de Avaliação Contínua e Performance Intelligence",
+  "LeaveSync Interno : Férias sem Fricção entre Portugal e Brasil",
+  "KURA",
+];
 
 function sortMeetings(a: CalendarEvent, b: CalendarEvent) {
   if (a.date !== b.date) return a.date.localeCompare(b.date);
@@ -36,6 +47,45 @@ function toDocHtml(value: string) {
     .split(/\n{2,}/)
     .map((paragraph) => `<p>${paragraph.replace(/\n/g, "<br>")}</p>`)
     .join("");
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function isLegacyTlanticSuggestionSet(item: B2AItem) {
+  const company = item.company.trim().toLowerCase();
+  if (company !== "tlantic") return false;
+  if ((item.notesList || []).length !== TLANTIC_SUGGESTION_TITLES.length) return false;
+
+  const currentTitles = new Set(
+    (item.notesList || []).map((note) => note.title.trim()).filter(Boolean)
+  );
+
+  return TLANTIC_SUGGESTION_TITLES.every((title) => currentTitles.has(title));
+}
+
+function buildAppliedSuggestionsHtml(notesList: InlineNote[]) {
+  const sections = notesList
+    .map((note) => {
+      const title = escapeHtml(note.title.trim() || "Untitled suggestion");
+      const body = toDocHtml(note.body || note.content || "");
+      return `<h3>${title}</h3>${body}`;
+    })
+    .join("");
+
+  return `<hr /><h2>Applied Suggestions</h2><p>Directions discussed in the meeting and worth exploring before turning them into real applied solutions.</p>${sections}`;
+}
+
+function mergeStrategyWithSuggestions(item: B2AItem) {
+  const base = toDocHtml(item.summary);
+  const suggestions = buildAppliedSuggestionsHtml(item.notesList || []);
+  return `${base}${suggestions}`;
 }
 
 function AppliedCard({
@@ -128,6 +178,27 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
     },
     300
   );
+
+  useEffect(() => {
+    if (!loaded) return;
+
+    setB2A((prev) => {
+      let changed = false;
+
+      const next = prev.map((item) => {
+        if (!isLegacyTlanticSuggestionSet(item)) return item;
+
+        changed = true;
+        return {
+          ...item,
+          summary: mergeStrategyWithSuggestions(item),
+          notesList: [],
+        };
+      });
+
+      return changed ? next : prev;
+    });
+  }, [loaded, setB2A]);
 
   if (!loaded) {
     return <div className="loading">Loading Applied...</div>;
