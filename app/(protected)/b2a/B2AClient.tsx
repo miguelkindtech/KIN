@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/providers/AppContext";
 import { addMinutes, formatDate, uid } from "@/lib/utils";
@@ -21,6 +21,8 @@ const TLANTIC_SUGGESTION_TITLES = [
   "LeaveSync Interno : Férias sem Fricção entre Portugal e Brasil",
   "KURA",
 ];
+
+const APPLIED_SUGGESTIONS_MARKER = "<hr /><h2>Applied Suggestions</h2>";
 
 function sortMeetings(a: CalendarEvent, b: CalendarEvent) {
   if (a.date !== b.date) return a.date.localeCompare(b.date);
@@ -49,6 +51,15 @@ function toDocHtml(value: string) {
     .join("");
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function suggestionTitlesForItem(item: B2AItem) {
   return item.company.trim().toLowerCase() === "tlantic"
     ? TLANTIC_SUGGESTION_TITLES
@@ -68,6 +79,56 @@ function splitAppliedNotes(item: B2AItem) {
   );
 
   return { suggestions, solutions };
+}
+
+function recoverTlanticSuggestionsFromSummary(item: B2AItem) {
+  if (item.company.trim().toLowerCase() !== "tlantic") return null;
+  if ((item.notesList || []).length > 0) return null;
+
+  const markerIndex = item.summary.indexOf(APPLIED_SUGGESTIONS_MARKER);
+  if (markerIndex === -1) return null;
+
+  const baseSummary = item.summary.slice(0, markerIndex).trim() || "<p></p>";
+  const suggestionsHtml = item.summary
+    .slice(markerIndex + APPLIED_SUGGESTIONS_MARKER.length)
+    .replace(
+      /^<p>Directions discussed in the meeting and worth exploring before turning them into real applied solutions\.<\/p>/,
+      ""
+    );
+
+  const recoveredNotes: InlineNote[] = [];
+
+  TLANTIC_SUGGESTION_TITLES.forEach((title, index) => {
+    const currentMarker = `<h3>${escapeHtml(title)}</h3>`;
+    const currentIndex = suggestionsHtml.indexOf(currentMarker);
+    if (currentIndex === -1) return;
+
+    const bodyStart = currentIndex + currentMarker.length;
+    const nextMarkerIndex = TLANTIC_SUGGESTION_TITLES.slice(index + 1)
+      .map((nextTitle) =>
+        suggestionsHtml.indexOf(`<h3>${escapeHtml(nextTitle)}</h3>`, bodyStart)
+      )
+      .filter((value) => value !== -1)
+      .sort((a, b) => a - b)[0];
+
+    const body = suggestionsHtml
+      .slice(bodyStart, nextMarkerIndex ?? suggestionsHtml.length)
+      .trim();
+
+    recoveredNotes.push({
+      id: uid(),
+      title,
+      body,
+      content: body,
+    });
+  });
+
+  if (recoveredNotes.length === 0) return null;
+
+  return {
+    summary: baseSummary,
+    notesList: recoveredNotes,
+  };
 }
 
 function AppliedCard({
@@ -160,6 +221,28 @@ export default function B2AClient({ defaultId }: B2AClientProps) {
     },
     300
   );
+
+  useEffect(() => {
+    if (!loaded) return;
+
+    setB2A((prev) => {
+      let changed = false;
+
+      const next = prev.map((item) => {
+        const recovered = recoverTlanticSuggestionsFromSummary(item);
+        if (!recovered) return item;
+
+        changed = true;
+        return {
+          ...item,
+          summary: recovered.summary,
+          notesList: recovered.notesList,
+        };
+      });
+
+      return changed ? next : prev;
+    });
+  }, [loaded, setB2A]);
 
   if (!loaded) {
     return <div className="loading">Loading Applied...</div>;
