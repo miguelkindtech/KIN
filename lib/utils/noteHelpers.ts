@@ -9,7 +9,7 @@ export function createBlock(
   const base: NoteBlock = { id: uid(), type };
 
   if (type === "todo") {
-    return { ...base, text: "", checked: false, indent: 0, ...extras };
+    return { ...base, text: "", details: "", checked: false, indent: 0, ...extras };
   }
 
   if (type === "divider") {

@@ -58,6 +58,7 @@ export function extractDailyTodoTasks(blocks: NoteBlock[] = []) {
 
   blocks.forEach((block) => {
     if (block.type === "todo") {
+      if ((block.indent || 0) > 0) return;
       const text = cleanTaskText(block.text || "");
       if (text) tasks.push(text);
       return;

@@ -135,6 +135,7 @@ export interface NoteBlock {
     | "note_link"
     | "entity_link";
   text?: string;
+  details?: string;
   checked?: boolean;
   indent?: number;
   icon?: string;

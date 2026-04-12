@@ -67,7 +67,7 @@ export function getEventMeta(type: string) {
 
 export function createBlock(type: Block["type"] = "text", extras: Partial<Block> = {}): Block {
   const base: Block = { id: uid(), type };
-  if (type === "todo") return { ...base, text: "", checked: false, indent: 0, ...extras };
+  if (type === "todo") return { ...base, text: "", details: "", checked: false, indent: 0, ...extras };
   if (type === "divider") return { ...base, ...extras };
   if (type === "callout") return { ...base, text: "", icon: "i", ...extras };
   if (type === "code") return { ...base, text: "", language: "", ...extras };
@@ -80,7 +80,7 @@ export function createBlock(type: Block["type"] = "text", extras: Partial<Block>
 
 export function normalizeBlock(block: Partial<Block>): Block {
   if (!block?.type) return createBlock("text");
-  if (block.type === "todo") return { indent: 0, checked: false, text: "", ...block } as Block;
+  if (block.type === "todo") return { indent: 0, checked: false, text: "", details: "", ...block } as Block;
   if (block.type === "callout") return { icon: "i", text: "", ...block } as Block;
   if (block.type === "code") return { language: "", text: "", ...block } as Block;
   if (block.type === "table") return { rows: [["", ""], ["", ""]], ...block } as Block;

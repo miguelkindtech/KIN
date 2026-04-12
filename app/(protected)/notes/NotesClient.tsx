@@ -10,6 +10,7 @@ import {
   DAILY_TODO_FOLDER_NAME,
   dailyTodoDateFromLink,
   dailyTodoLink,
+  extractDailyTodoTasks,
   isDailyTodoFolderName,
 } from "@/lib/utils/dailyTodos";
 import { NOTE_COLORS, NOTE_CATEGORIES } from "@/lib/constants";
@@ -25,7 +26,6 @@ import RichDocEditor from "@/components/ui/RichDocEditor";
 const DESKTOP_FOLDER_PREFIX = "desktop-folder:";
 const DESKTOP_FOLDERS_STORAGE_KEY = "kind-notes-desktop-folders";
 const EXPLORE_DROPZONE_ID = "__explore__";
-const DAILY_TODO_NOTE_HTML = "<ul><li><br></li></ul>";
 
 function desktopFolderLink(name: string) {
   return `${DESKTOP_FOLDER_PREFIX}${name}`;
@@ -154,6 +154,33 @@ function formatDailyTodoDate(date: string) {
   });
 }
 
+function createDailyTodoBlock(extras: Partial<Block> = {}): Block {
+  return {
+    id: uid(),
+    type: "todo",
+    text: "",
+    details: "",
+    checked: false,
+    indent: 0,
+    ...extras,
+  };
+}
+
+function dailyTodoBlocksFromNote(blocks: Block[]) {
+  const todoBlocks = blocks
+    .filter((block) => block.type === "todo" && (block.indent || 0) === 0)
+    .map((block) => createDailyTodoBlock(block));
+
+  if (todoBlocks.length > 0) return todoBlocks;
+
+  const migratedTasks = extractDailyTodoTasks(blocks);
+  if (migratedTasks.length > 0) {
+    return migratedTasks.map((task) => createDailyTodoBlock({ text: task }));
+  }
+
+  return [createDailyTodoBlock()];
+}
+
 type NoteCardProps = {
   note: Note;
   onOpen: (id: string) => void;
@@ -210,6 +237,186 @@ function NoteCard({
         <span className="note-card-symbol" style={{ color: colorDef.fg }}>
           {colorDef.symbol}
         </span>
+      </div>
+    </div>
+  );
+}
+
+type DailyTodoEditorProps = {
+  note: Note;
+  todoDate: string;
+  tasks: Block[];
+  onUpdate: (id: string, patch: Partial<Note>) => void;
+  onBack: () => void;
+  onDelete: () => void;
+};
+
+function DailyTodoEditor({
+  note,
+  todoDate,
+  tasks,
+  onUpdate,
+  onBack,
+  onDelete,
+}: DailyTodoEditorProps) {
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const activeTask = tasks.find((task) => task.id === activeTaskId) || null;
+
+  useEffect(() => {
+    if (activeTaskId && !activeTask) {
+      setActiveTaskId(null);
+    }
+  }, [activeTask, activeTaskId]);
+
+  function commitTasks(nextTasks: Block[], patch: Partial<Note> = {}) {
+    onUpdate(note.id, { blocks: nextTasks, ...patch });
+  }
+
+  function updateTask(taskId: string, patch: Partial<Block>) {
+    commitTasks(
+      tasks.map((task) =>
+        task.id === taskId ? { ...task, ...patch } : task
+      )
+    );
+  }
+
+  function insertTaskAfter(taskId?: string) {
+    const nextTask = createDailyTodoBlock();
+    const nextTasks = [...tasks];
+    const index = taskId
+      ? nextTasks.findIndex((task) => task.id === taskId)
+      : nextTasks.length - 1;
+
+    nextTasks.splice(index + 1, 0, nextTask);
+    commitTasks(nextTasks);
+  }
+
+  function removeTask(taskId: string) {
+    if (tasks.length <= 1) {
+      commitTasks([createDailyTodoBlock({ id: taskId })]);
+      return;
+    }
+
+    commitTasks(tasks.filter((task) => task.id !== taskId));
+  }
+
+  if (activeTask) {
+    return (
+      <div className="page">
+        <button className="back-btn" onClick={() => setActiveTaskId(null)}>
+          ← back to task list
+        </button>
+
+        <div className="daily-task-detail-shell">
+          <div className="card daily-task-detail-card">
+            <div className="detail-label">task continuation</div>
+            <input
+              className="daily-task-detail-title"
+              value={activeTask.text || ""}
+              placeholder="task title"
+              onChange={(event) =>
+                updateTask(activeTask.id, { text: event.target.value })
+              }
+            />
+            <textarea
+              className="daily-task-detail-body"
+              value={activeTask.details || ""}
+              placeholder="Write the detail for this task here..."
+              onChange={(event) =>
+                updateTask(activeTask.id, { details: event.target.value })
+              }
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <button className="back-btn" onClick={onBack}>
+        ← back to notes
+      </button>
+
+      <div className="daily-todo-shell">
+        <div className="card daily-todo-card">
+          <div className="daily-todo-head">
+            <div>
+              <div className="detail-label">daily to-do list</div>
+              <input
+                className="rich-doc-title-input daily-todo-title-input"
+                value={note.title}
+                placeholder="daily to-do list"
+                onChange={(event) =>
+                  onUpdate(note.id, { title: event.target.value })
+                }
+              />
+              <div className="muted daily-todo-date">
+                {formatDailyTodoDate(todoDate)}
+              </div>
+            </div>
+            <button className="danger-btn small-btn" onClick={onDelete}>
+              delete note
+            </button>
+          </div>
+
+          <div className="daily-task-list">
+            {tasks.map((task) => (
+              <div className="daily-task-row" key={task.id}>
+                <button
+                  className={`todo-check${task.checked ? " done" : ""}`}
+                  onClick={() =>
+                    updateTask(task.id, { checked: !task.checked })
+                  }
+                  aria-label={task.checked ? "Uncheck task" : "Check task"}
+                  type="button"
+                >
+                  {task.checked ? "✓" : ""}
+                </button>
+                <span className="daily-task-dot" />
+                <input
+                  className="daily-task-title-input"
+                  value={task.text || ""}
+                  placeholder="Task title"
+                  onChange={(event) =>
+                    updateTask(task.id, { text: event.target.value })
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      insertTaskAfter(task.id);
+                    }
+
+                    if (
+                      event.key === "Backspace" &&
+                      !task.text &&
+                      !task.details
+                    ) {
+                      event.preventDefault();
+                      removeTask(task.id);
+                    }
+                  }}
+                />
+                <button
+                  className="daily-task-open"
+                  onClick={() => setActiveTaskId(task.id)}
+                  aria-label={`Open details for ${task.text || "task"}`}
+                  type="button"
+                >
+                  ›
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            className="ghost-btn daily-task-add"
+            onClick={() => insertTaskAfter()}
+            type="button"
+          >
+            + task
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -332,7 +539,7 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
       description: "Daily task list",
       color: NOTE_COLORS[3].bg,
       linkedTo: dailyTodoLink(dailyTodoDate),
-      blocks: [{ id: uid(), type: "text", text: DAILY_TODO_NOTE_HTML }],
+      blocks: [createDailyTodoBlock()],
       createdAt: now,
       updatedAt: now,
     };
@@ -435,19 +642,38 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
     const todoDate = dailyTodoDateFromLink(note.linkedTo);
     const isDailyTodo = todoDate !== null;
 
+    if (isDailyTodo) {
+      return (
+        <>
+          <DailyTodoEditor
+            note={note}
+            todoDate={todoDate}
+            tasks={dailyTodoBlocksFromNote(note.blocks)}
+            onUpdate={updateNote}
+            onBack={() => {
+              setEditingId(null);
+              router.push("/notes");
+            }}
+            onDelete={() => setConfirmDeleteId(note.id)}
+          />
+          <ConfirmModal
+            show={confirmDeleteId !== null}
+            onClose={() => setConfirmDeleteId(null)}
+            onConfirm={() => deleteNote(confirmDeleteId!)}
+            label={`"${note.title || "untitled"}"`}
+          />
+        </>
+      );
+    }
+
     return (
       <>
         <RichDocEditor
           title={note.title}
           titlePlaceholder="untitled note"
           value={docValue}
-          placeholder={
-            isDailyTodo
-              ? "Add one task per bullet..."
-              : "Write the note here..."
-          }
+          placeholder="Write the note here..."
           backLabel="back to notes"
-          taskListMode={isDailyTodo}
           onTitleChange={(value) => updateNote(note.id, { title: value })}
           onChange={(value) =>
             updateNote(note.id, {
@@ -459,48 +685,36 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
             router.push("/notes");
           }}
           beforeEditor={
-            <>
-              {isDailyTodo ? (
-                <div className="rich-doc-task-note">
-                  <div className="detail-label">daily task list</div>
-                  <div>
-                    Use top-level bullets for tasks. Press Tab inside a task to add
-                    nested detail; the calendar only shows the top-level bullets.
-                  </div>
-                </div>
-              ) : null}
-
-              {pdfBlocks.length > 0 ? (
-                <div className="rich-doc-attachments">
-                  {pdfBlocks.map((block) => (
-                    <div key={block.id} className="rich-doc-attachment">
-                      <div className="rich-doc-attachment-head">
-                        <div className="detail-label">imported pdf</div>
-                        <a
-                          className="ghost-btn small-btn"
-                          href={block.src}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          open
-                        </a>
-                      </div>
-                      <div className="muted rich-doc-attachment-name">
-                        {block.name || block.caption || "document.pdf"}
-                      </div>
-                      {block.src ? (
-                        <div className="rich-doc-pdf-frame">
-                          <iframe
-                            src={block.src}
-                            title={block.name || "Imported PDF"}
-                          />
-                        </div>
-                      ) : null}
+            pdfBlocks.length > 0 ? (
+              <div className="rich-doc-attachments">
+                {pdfBlocks.map((block) => (
+                  <div key={block.id} className="rich-doc-attachment">
+                    <div className="rich-doc-attachment-head">
+                      <div className="detail-label">imported pdf</div>
+                      <a
+                        className="ghost-btn small-btn"
+                        href={block.src}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        open
+                      </a>
                     </div>
-                  ))}
-                </div>
-              ) : null}
-            </>
+                    <div className="muted rich-doc-attachment-name">
+                      {block.name || block.caption || "document.pdf"}
+                    </div>
+                    {block.src ? (
+                      <div className="rich-doc-pdf-frame">
+                        <iframe
+                          src={block.src}
+                          title={block.name || "Imported PDF"}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null
           }
           sidePanel={
             <div
@@ -524,36 +738,27 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
                 />
               </div>
 
-              {isDailyTodo ? (
-                <div>
-                  <div className="detail-label">to-do date</div>
-                  <div className="muted" style={{ fontSize: "0.8rem", marginTop: 4 }}>
-                    {formatDailyTodoDate(todoDate)}
-                  </div>
+              <div>
+                <div className="detail-label">category</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                  {NOTE_CATEGORIES.map((category) => (
+                    <button
+                      key={category}
+                      className={
+                        note.category === category ? "action-btn" : "ghost-btn"
+                      }
+                      style={{ fontSize: "0.78rem", padding: "4px 10px" }}
+                      onClick={() =>
+                        updateNote(note.id, {
+                          category: category as Note["category"],
+                        })
+                      }
+                    >
+                      {category}
+                    </button>
+                  ))}
                 </div>
-              ) : (
-                <div>
-                  <div className="detail-label">category</div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                    {NOTE_CATEGORIES.map((category) => (
-                      <button
-                        key={category}
-                        className={
-                          note.category === category ? "action-btn" : "ghost-btn"
-                        }
-                        style={{ fontSize: "0.78rem", padding: "4px 10px" }}
-                        onClick={() =>
-                          updateNote(note.id, {
-                            category: category as Note["category"],
-                          })
-                        }
-                      >
-                        {category}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+              </div>
 
               <div>
                 <div className="detail-label">color</div>

@@ -1046,15 +1046,66 @@ input, textarea, select { color: inherit; }
   border-left: 3px solid var(--border);
   color: var(--text2);
 }
-.rich-doc-task-note {
-  margin: 18px 24px 0;
+.daily-todo-shell,
+.daily-task-detail-shell { max-width: 980px; }
+.daily-todo-card,
+.daily-task-detail-card { display: flex; flex-direction: column; gap: 18px; }
+.daily-todo-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.daily-todo-title-input,
+.daily-task-detail-title {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text1);
+}
+.daily-todo-title-input { padding: 6px 0 2px; }
+.daily-todo-date { font-size: 12px; margin-top: 4px; }
+.daily-task-list { display: flex; flex-direction: column; gap: 10px; }
+.daily-task-row {
+  display: grid;
+  grid-template-columns: 24px 8px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg2);
-  color: var(--text2);
   padding: 10px 12px;
-  font-size: 12px;
-  line-height: 1.5;
+}
+.daily-task-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); }
+.daily-task-title-input {
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text1);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.daily-task-open {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+.daily-task-open:hover { color: var(--text1); border-color: var(--text3); }
+.daily-task-add { align-self: flex-start; }
+.daily-task-detail-title { font-size: 28px; line-height: 1.2; font-weight: 600; }
+.daily-task-detail-body {
+  min-height: 54vh;
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  color: var(--text1);
+  font-size: 15px;
+  line-height: 1.8;
 }
 
 .note-editor-shell { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
@@ -1077,7 +1128,7 @@ input, textarea, select { color: inherit; }
 .block-divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 .todo-row { display: flex; align-items: center; gap: 10px; }
 .todo-check { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--text3); background: transparent; cursor: pointer; flex-shrink: 0; }
-.todo-check.done { background: #1D9E75; border-color: #1D9E75; }
+.todo-check.done { background: #1D9E75; border-color: #1D9E75; color: #fff; }
 .todo-indent-1 { margin-left: 20px; }
 .todo-indent-2 { margin-left: 40px; }
 .block-table-wrap, .block-media, .block-link-card, .block-entity-card { border: 1px solid var(--border); background: var(--bg2); border-radius: var(--radius-sm); }
@@ -1228,6 +1279,7 @@ input, textarea, select { color: inherit; }
   .notes-folder-grid { grid-template-columns: 1fr; }
   .notes-folder-create { width: 100%; }
   .notes-folder-input { width: 100%; }
+  .daily-todo-head { flex-direction: column; }
   .notes-desktop-header, .notes-strategic-header { flex-direction: column; align-items: flex-start; }
   .rich-doc-toolbar { padding: 10px 12px; }
   .talent-grid { grid-template-columns: 1fr !important; }
