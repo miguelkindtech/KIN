@@ -5,7 +5,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/providers/AppContext";
-import { uid, noteColorDef, notePreview } from "@/lib/utils";
+import { uid, formatDate, noteColorDef, notePreview } from "@/lib/utils";
+import {
+  DAILY_TODO_FOLDER_NAME,
+  dailyTodoDateFromLink,
+  dailyTodoLink,
+  isDailyTodoFolderName,
+} from "@/lib/utils/dailyTodos";
 import { NOTE_COLORS, NOTE_CATEGORIES } from "@/lib/constants";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { Note, Block } from "@/lib/types";
@@ -19,12 +25,14 @@ import RichDocEditor from "@/components/ui/RichDocEditor";
 const DESKTOP_FOLDER_PREFIX = "desktop-folder:";
 const DESKTOP_FOLDERS_STORAGE_KEY = "kind-notes-desktop-folders";
 const EXPLORE_DROPZONE_ID = "__explore__";
+const DAILY_TODO_NOTE_HTML = "<ul><li><br></li></ul>";
 
 function desktopFolderLink(name: string) {
   return `${DESKTOP_FOLDER_PREFIX}${name}`;
 }
 
 function folderNameFromLink(linkedTo: string | null | undefined) {
+  if (dailyTodoDateFromLink(linkedTo)) return DAILY_TODO_FOLDER_NAME;
   if (!linkedTo || !linkedTo.startsWith(DESKTOP_FOLDER_PREFIX)) return null;
   return linkedTo.slice(DESKTOP_FOLDER_PREFIX.length);
 }
@@ -135,6 +143,17 @@ function createRichDocFromImportedPdf(
     .join("");
 }
 
+function formatDailyTodoDate(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return date;
+
+  return new Date(year, month - 1, day).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 type NoteCardProps = {
   note: Note;
   onOpen: (id: string) => void;
@@ -205,12 +224,15 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const importPdfRef = useRef<HTMLInputElement | null>(null);
+  const todayStr = useMemo(() => formatDate(new Date()), []);
 
   const [editingId, setEditingId] = useState<string | null>(defaultId ?? null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showDailyTodoCreate, setShowDailyTodoCreate] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [desktopFolders, setDesktopFolders] = useState<string[]>([]);
   const [newFolderName, setNewFolderName] = useState("");
+  const [dailyTodoDate, setDailyTodoDate] = useState(todayStr);
   const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
@@ -279,6 +301,44 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
     setNewDesc("");
     setNewCategory("explore");
     setNewColor(NOTE_COLORS[0].bg);
+    openNote(note.id);
+  }
+
+  function openDailyTodoCreate() {
+    setDailyTodoDate(todayStr);
+    setShowDailyTodoCreate(true);
+  }
+
+  function createDailyTodoNote() {
+    if (!dailyTodoDate || dailyTodoDate < todayStr) return;
+
+    const existingNote = notes.find(
+      (note) => dailyTodoDateFromLink(note.linkedTo) === dailyTodoDate
+    );
+
+    setShowDailyTodoCreate(false);
+
+    if (existingNote) {
+      setDailyTodoDate(todayStr);
+      openNote(existingNote.id);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const note: Note = {
+      id: uid(),
+      title: `To-do - ${formatDailyTodoDate(dailyTodoDate)}`,
+      category: "explore",
+      description: "Daily task list",
+      color: NOTE_COLORS[3].bg,
+      linkedTo: dailyTodoLink(dailyTodoDate),
+      blocks: [{ id: uid(), type: "text", text: DAILY_TODO_NOTE_HTML }],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setNotes((prev) => [...prev, note]);
+    setDailyTodoDate(todayStr);
     openNote(note.id);
   }
 
@@ -372,6 +432,8 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
     const updatedAt = note.updatedAt || createdAt;
     const pdfBlocks = note.blocks.filter((block) => block.type === "pdf");
     const docValue = blocksToRichDoc(note.blocks);
+    const todoDate = dailyTodoDateFromLink(note.linkedTo);
+    const isDailyTodo = todoDate !== null;
 
     return (
       <>
@@ -379,8 +441,13 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
           title={note.title}
           titlePlaceholder="untitled note"
           value={docValue}
-          placeholder="Write the note here..."
+          placeholder={
+            isDailyTodo
+              ? "Add one task per bullet..."
+              : "Write the note here..."
+          }
           backLabel="back to notes"
+          taskListMode={isDailyTodo}
           onTitleChange={(value) => updateNote(note.id, { title: value })}
           onChange={(value) =>
             updateNote(note.id, {
@@ -392,36 +459,48 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
             router.push("/notes");
           }}
           beforeEditor={
-            pdfBlocks.length > 0 ? (
-              <div className="rich-doc-attachments">
-                {pdfBlocks.map((block) => (
-                  <div key={block.id} className="rich-doc-attachment">
-                    <div className="rich-doc-attachment-head">
-                      <div className="detail-label">imported pdf</div>
-                      <a
-                        className="ghost-btn small-btn"
-                        href={block.src}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        open
-                      </a>
-                    </div>
-                    <div className="muted rich-doc-attachment-name">
-                      {block.name || block.caption || "document.pdf"}
-                    </div>
-                    {block.src ? (
-                      <div className="rich-doc-pdf-frame">
-                        <iframe
-                          src={block.src}
-                          title={block.name || "Imported PDF"}
-                        />
-                      </div>
-                    ) : null}
+            <>
+              {isDailyTodo ? (
+                <div className="rich-doc-task-note">
+                  <div className="detail-label">daily task list</div>
+                  <div>
+                    Use top-level bullets for tasks. Press Tab inside a task to add
+                    nested detail; the calendar only shows the top-level bullets.
                   </div>
-                ))}
-              </div>
-            ) : null
+                </div>
+              ) : null}
+
+              {pdfBlocks.length > 0 ? (
+                <div className="rich-doc-attachments">
+                  {pdfBlocks.map((block) => (
+                    <div key={block.id} className="rich-doc-attachment">
+                      <div className="rich-doc-attachment-head">
+                        <div className="detail-label">imported pdf</div>
+                        <a
+                          className="ghost-btn small-btn"
+                          href={block.src}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          open
+                        </a>
+                      </div>
+                      <div className="muted rich-doc-attachment-name">
+                        {block.name || block.caption || "document.pdf"}
+                      </div>
+                      {block.src ? (
+                        <div className="rich-doc-pdf-frame">
+                          <iframe
+                            src={block.src}
+                            title={block.name || "Imported PDF"}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </>
           }
           sidePanel={
             <div
@@ -445,27 +524,36 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
                 />
               </div>
 
-              <div>
-                <div className="detail-label">category</div>
-                <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                  {NOTE_CATEGORIES.map((category) => (
-                    <button
-                      key={category}
-                      className={
-                        note.category === category ? "action-btn" : "ghost-btn"
-                      }
-                      style={{ fontSize: "0.78rem", padding: "4px 10px" }}
-                      onClick={() =>
-                        updateNote(note.id, {
-                          category: category as Note["category"],
-                        })
-                      }
-                    >
-                      {category}
-                    </button>
-                  ))}
+              {isDailyTodo ? (
+                <div>
+                  <div className="detail-label">to-do date</div>
+                  <div className="muted" style={{ fontSize: "0.8rem", marginTop: 4 }}>
+                    {formatDailyTodoDate(todoDate)}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <div className="detail-label">category</div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                    {NOTE_CATEGORIES.map((category) => (
+                      <button
+                        key={category}
+                        className={
+                          note.category === category ? "action-btn" : "ghost-btn"
+                        }
+                        style={{ fontSize: "0.78rem", padding: "4px 10px" }}
+                        onClick={() =>
+                          updateNote(note.id, {
+                            category: category as Note["category"],
+                          })
+                        }
+                      >
+                        {category}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <div className="detail-label">color</div>
@@ -568,8 +656,8 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
     .filter((folderName): folderName is string => Boolean(folderName));
 
   const allFolderNames = (() => {
-    const ordered = [...desktopFolders];
-    persistedFolderNames.forEach((folderName) => {
+    const ordered: string[] = [DAILY_TODO_FOLDER_NAME];
+    const addFolderName = (folderName: string) => {
       if (
         !ordered.some(
           (existingFolder) =>
@@ -578,7 +666,10 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
       ) {
         ordered.push(folderName);
       }
-    });
+    };
+
+    desktopFolders.forEach(addFolderName);
+    persistedFolderNames.forEach(addFolderName);
     return ordered;
   })();
 
@@ -614,6 +705,12 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
   }
 
   function fileNoteIntoFolder(noteId: string, folderName: string) {
+    if (isDailyTodoFolderName(folderName)) {
+      setDropTarget(null);
+      setDraggedNoteId(null);
+      return;
+    }
+
     updateNote(noteId, { linkedTo: desktopFolderLink(folderName) });
     setDropTarget(null);
     setDraggedNoteId(null);
@@ -626,6 +723,8 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
   }
 
   function deleteFolder(folderName: string) {
+    if (isDailyTodoFolderName(folderName)) return;
+
     setDesktopFolders((prev) =>
       prev.filter((folder) => folder.toLowerCase() !== folderName.toLowerCase())
     );
@@ -751,13 +850,15 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
               <div className="notes-folder-grid">
                 {allFolderNames.map((folderName) => {
                   const items = folderNotes(folderName);
+                  const isDailyFolder = isDailyTodoFolderName(folderName);
                   return (
                     <div
                       key={folderName}
                       className={`desktop-folder-card${
                         dropTarget === folderName ? " drag-over" : ""
-                      }`}
+                      }${isDailyFolder ? " fixed-folder" : ""}`}
                       onDragOver={(event) => {
+                        if (isDailyFolder) return;
                         event.preventDefault();
                         setDropTarget(folderName);
                       }}
@@ -766,6 +867,7 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
                       }}
                       onDrop={(event) => {
                         event.preventDefault();
+                        if (isDailyFolder) return;
                         const noteId = getDraggedNoteId(event);
                         if (!noteId) return;
                         fileNoteIntoFolder(noteId, folderName);
@@ -780,66 +882,90 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
                               {items.length} note{items.length === 1 ? "" : "s"}
                             </div>
                           </div>
-                          <button
-                            className="ghost-btn small-btn"
-                            onClick={() => deleteFolder(folderName)}
-                            type="button"
-                          >
-                            remove
-                          </button>
+                          {isDailyFolder ? (
+                            <button
+                              className="action-btn small-btn"
+                              onClick={openDailyTodoCreate}
+                              type="button"
+                            >
+                              + day
+                            </button>
+                          ) : (
+                            <button
+                              className="ghost-btn small-btn"
+                              onClick={() => deleteFolder(folderName)}
+                              type="button"
+                            >
+                              remove
+                            </button>
+                          )}
                         </div>
 
                         {items.length === 0 ? (
                           <div className="desktop-folder-empty">
-                            drop explore notes here
+                            {isDailyFolder
+                              ? "choose a day to create a to-do list"
+                              : "drop explore notes here"}
                           </div>
                         ) : (
                           <div className="desktop-folder-notes">
-                            {items.map((note) => (
-                              <div
-                                key={note.id}
-                                className="desktop-note-chip"
-                                draggable
-                                onDoubleClick={() => openNote(note.id)}
-                                onDragStart={(event) => {
-                                  event.dataTransfer.effectAllowed = "move";
-                                  event.dataTransfer.setData(
-                                    "text/note-id",
-                                    note.id
-                                  );
-                                  setDraggedNoteId(note.id);
-                                }}
-                                onDragEnd={() => {
-                                  setDraggedNoteId(null);
-                                  setDropTarget(null);
-                                }}
-                              >
-                                <span
-                                  className="desktop-note-chip-dot"
-                                  style={{ background: noteColorDef(note.color).fg }}
-                                />
-                                <div className="desktop-note-chip-content">
-                                  <div className="desktop-note-chip-title">
-                                    {note.title || "untitled"}
-                                  </div>
-                                  {note.description ? (
-                                    <div className="desktop-note-chip-desc">
-                                      {note.description}
-                                    </div>
-                                  ) : null}
-                                </div>
-                                <button
-                                  className="item-delete"
-                                  title="remove from folder"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    unfileNote(note.id);
+                            {items.map((note) => {
+                              const noteTodoDate = dailyTodoDateFromLink(note.linkedTo);
+                              const isFixedDailyNote = noteTodoDate !== null;
+
+                              return (
+                                <div
+                                  key={note.id}
+                                  className={`desktop-note-chip${
+                                    isFixedDailyNote ? " desktop-note-chip-fixed" : ""
+                                  }`}
+                                  draggable={!isFixedDailyNote}
+                                  onDoubleClick={() => openNote(note.id)}
+                                  onDragStart={(event) => {
+                                    if (isFixedDailyNote) return;
+                                    event.dataTransfer.effectAllowed = "move";
+                                    event.dataTransfer.setData(
+                                      "text/note-id",
+                                      note.id
+                                    );
+                                    setDraggedNoteId(note.id);
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggedNoteId(null);
+                                    setDropTarget(null);
                                   }}
                                 >
-                                  ×
-                                </button>
-                              </div>
-                            ))}
+                                  <span
+                                    className="desktop-note-chip-dot"
+                                    style={{ background: noteColorDef(note.color).fg }}
+                                  />
+                                  <div className="desktop-note-chip-content">
+                                    <div className="desktop-note-chip-title">
+                                      {note.title || "untitled"}
+                                    </div>
+                                    {noteTodoDate || note.description ? (
+                                      <div className="desktop-note-chip-desc">
+                                        {noteTodoDate
+                                          ? formatDailyTodoDate(noteTodoDate)
+                                          : note.description}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                  {!isFixedDailyNote ? (
+                                    <button
+                                      className="item-delete"
+                                      title="remove from folder"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        unfileNote(note.id);
+                                      }}
+                                    >
+                                      x
+                                    </button>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -879,6 +1005,42 @@ export default function NotesClient({ defaultId }: NotesClientProps) {
           )}
         </section>
       </div>
+
+      <Modal
+        show={showDailyTodoCreate}
+        onClose={() => setShowDailyTodoCreate(false)}
+        title="daily to-do list"
+      >
+        <div className="modal-field">
+          <label className="modal-label">day</label>
+          <input
+            className="modal-input"
+            type="date"
+            value={dailyTodoDate}
+            min={todayStr}
+            onChange={(event) => setDailyTodoDate(event.target.value)}
+          />
+        </div>
+        <div className="muted daily-todo-modal-copy">
+          Creates a note inside the fixed daily to-do lists folder. Only days
+          from today onward can be selected.
+        </div>
+        <div className="modal-actions">
+          <button
+            className="ghost-btn"
+            onClick={() => setShowDailyTodoCreate(false)}
+          >
+            cancel
+          </button>
+          <button
+            className="action-btn"
+            onClick={createDailyTodoNote}
+            disabled={!dailyTodoDate || dailyTodoDate < todayStr}
+          >
+            create list
+          </button>
+        </div>
+      </Modal>
 
       <Modal show={showCreate} onClose={() => setShowCreate(false)} title="new note">
         <div className="modal-field">

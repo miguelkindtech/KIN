@@ -15,6 +15,10 @@ import {
 import { EVENT_TYPES, WEEKDAYS } from "@/lib/constants";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import type { CalendarEvent, DocItem } from "@/lib/types";
+import {
+  dailyTodoDateFromLink,
+  extractDailyTodoTasks,
+} from "@/lib/utils/dailyTodos";
 import { createClient } from "@/lib/supabase/client";
 import { syncTableById } from "@/lib/supabase/sync";
 import { uploadAttachment } from "@/lib/supabase/storage";
@@ -204,6 +208,23 @@ export default function CalendarClient() {
   }, [events]);
 
   const selectedDayEvents = eventsByDate[selectedDate] || [];
+  const dailyTodoTasksByDate = useMemo(() => {
+    const byDate: Record<string, string[]> = {};
+
+    notes.forEach((note) => {
+      const date = dailyTodoDateFromLink(note.linkedTo);
+      if (!date) return;
+
+      const tasks = extractDailyTodoTasks(note.blocks);
+      if (tasks.length === 0) return;
+
+      if (!byDate[date]) byDate[date] = [];
+      byDate[date].push(...tasks);
+    });
+
+    return byDate;
+  }, [notes]);
+  const selectedDayTodoTasks = dailyTodoTasksByDate[selectedDate] || [];
 
   const detailBase = startOfWeek(parseDateValue(selectedDate));
   const weekDays = Array.from({ length: 7 }, (_, index) =>
@@ -413,6 +434,20 @@ export default function CalendarClient() {
                 );
               })}
             </div>
+          )}
+        </div>
+
+        <div className="card calendar-side-section calendar-todo-card">
+          <div className="detail-label">daily to-do list</div>
+
+          {selectedDayTodoTasks.length === 0 ? (
+            <div className="calendar-empty">No to-do bullets for this day yet.</div>
+          ) : (
+            <ul className="calendar-todo-list">
+              {selectedDayTodoTasks.map((task, index) => (
+                <li key={`${task}-${index}`}>{task}</li>
+              ))}
+            </ul>
           )}
         </div>
       </div>

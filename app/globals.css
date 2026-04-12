@@ -708,6 +708,9 @@ input, textarea, select { color: inherit; }
 .calendar-all-day { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; background: rgba(127,119,221,0.12); color: #7F77DD; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
 .calendar-day-event-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .calendar-empty { border: 1px dashed var(--border); border-radius: var(--radius); padding: 18px 14px; color: var(--text3); text-align: center; font-size: 12px; }
+.calendar-todo-card { display: flex; flex-direction: column; gap: 12px; }
+.calendar-todo-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; color: var(--text1); font-size: 13px; line-height: 1.45; }
+.calendar-todo-list li::marker { color: #1D9E75; }
 .calendar-side-section { padding: 14px 16px; }
 .calendar-detail-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
@@ -803,11 +806,31 @@ input, textarea, select { color: inherit; }
   border-color: rgba(127,119,221,0.45);
   box-shadow: 0 16px 30px rgba(127,119,221,0.16);
 }
+.desktop-folder-card.fixed-folder .desktop-folder-tab {
+  background: color-mix(in srgb, #E8F4EE 74%, var(--bg) 26%);
+  border-color: rgba(29,158,117,0.2);
+}
+.desktop-folder-card.fixed-folder .desktop-folder-shell {
+  background: color-mix(in srgb, #E8F4EE 72%, var(--bg) 28%);
+  border-color: rgba(29,158,117,0.22);
+}
+[data-theme="dark"] .desktop-folder-card.fixed-folder .desktop-folder-tab {
+  background: color-mix(in srgb, #1D9E75 22%, var(--bg2) 78%);
+  border-color: rgba(93,202,165,0.16);
+}
+[data-theme="dark"] .desktop-folder-card.fixed-folder .desktop-folder-shell {
+  background: color-mix(in srgb, #1D9E75 14%, var(--bg2) 86%);
+  border-color: rgba(93,202,165,0.16);
+}
 .desktop-folder-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .desktop-folder-name { font-size: 14px; font-weight: 600; color: #6A4E19; }
+.desktop-folder-card.fixed-folder .desktop-folder-name { color: #1D6B52; }
 [data-theme="dark"] .desktop-folder-name { color: #F2E9D6; }
+[data-theme="dark"] .desktop-folder-card.fixed-folder .desktop-folder-name { color: #D9F4E8; }
 .desktop-folder-meta { font-size: 11px; color: rgba(106,78,25,0.68); margin-top: 3px; }
+.desktop-folder-card.fixed-folder .desktop-folder-meta { color: rgba(29,107,82,0.68); }
 [data-theme="dark"] .desktop-folder-meta { color: rgba(242,233,214,0.62); }
+[data-theme="dark"] .desktop-folder-card.fixed-folder .desktop-folder-meta { color: rgba(217,244,232,0.62); }
 .desktop-folder-empty {
   min-height: 112px;
   border: 1px dashed rgba(106,78,25,0.2);
@@ -851,6 +874,8 @@ input, textarea, select { color: inherit; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.desktop-note-chip-fixed { cursor: pointer; }
+.daily-todo-modal-copy { font-size: 12px; line-height: 1.5; margin-top: -2px; }
 .notes-strategic-section { margin-top: auto; display: flex; flex-direction: column; gap: 14px; }
 .notes-strategic-header { align-items: center; }
 .notes-strategic-mark {
@@ -1020,6 +1045,16 @@ input, textarea, select { color: inherit; }
   padding-left: 14px;
   border-left: 3px solid var(--border);
   color: var(--text2);
+}
+.rich-doc-task-note {
+  margin: 18px 24px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  color: var(--text2);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .note-editor-shell { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }

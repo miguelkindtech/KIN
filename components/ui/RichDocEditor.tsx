@@ -65,6 +65,7 @@ type RichDocEditorProps = {
   beforeEditor?: ReactNode;
   sidePanel?: ReactNode;
   toolbarExtras?: ReactNode;
+  taskListMode?: boolean;
   onTitleChange?: (value: string) => void;
   onChange: (value: string) => void;
   onBack: () => void;
@@ -80,6 +81,7 @@ export default function RichDocEditor({
   beforeEditor,
   sidePanel,
   toolbarExtras,
+  taskListMode = false,
   onTitleChange,
   onChange,
   onBack,
@@ -236,6 +238,31 @@ export default function RichDocEditor({
                 />
               ))}
             </div>
+            {taskListMode ? (
+              <>
+                <button
+                  className="ghost-btn small-btn"
+                  type="button"
+                  onClick={() => runCommand("insertUnorderedList")}
+                >
+                  Tasks
+                </button>
+                <button
+                  className="ghost-btn small-btn"
+                  type="button"
+                  onClick={() => runCommand("indent")}
+                >
+                  Detail
+                </button>
+                <button
+                  className="ghost-btn small-btn"
+                  type="button"
+                  onClick={() => runCommand("outdent")}
+                >
+                  Back
+                </button>
+              </>
+            ) : null}
             {toolbarExtras}
             {onDelete ? (
               <button
@@ -256,6 +283,11 @@ export default function RichDocEditor({
             data-placeholder={placeholder}
             contentEditable
             suppressContentEditableWarning
+            onKeyDown={(event) => {
+              if (!taskListMode || event.key !== "Tab") return;
+              event.preventDefault();
+              runCommand(event.shiftKey ? "outdent" : "indent");
+            }}
             onInput={syncFromDom}
             onBlur={syncFromDom}
           />
